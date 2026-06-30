@@ -13,7 +13,7 @@
 [![Status](https://img.shields.io/badge/Status-Deterministic%20%26%20Production--Oriented-1f8a4c)]()
 [![License](https://img.shields.io/badge/License-MIT-blue)]()
 
-📄 **[Read the full Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document (1).pdf)**
+📄 **[Read the full Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1).pdf)**
 
 </div>
 
@@ -207,7 +207,7 @@ candidate-data-transformer/
 ├── configs/               # Reliability weights, projection configs
 ├── samples/                # Sample input sources
 ├── docs/
-│   ├── Candidate_Data_Transformer_Design_Document.pdf
+│   ├── Candidate_Data_Transformer_Design_Document (1).pdf
 │   └── architecture_diagram.png
 ├── tests/
 └── requirements.txt
@@ -247,7 +247,7 @@ candidate-data-transformer/
 
 | Resource | Description |
 |---|---|
-| 📘 [Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document.pdf) | One-page abstract, full architecture, trust engine, merge policy, references |
+| 📘 [Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1).pdf) | One-page abstract, full architecture, trust engine, merge policy, references |
 | 🖼️ [Architecture Diagram](./docs/architecture_diagram.png) | Visual pipeline reference |
 
 ---
