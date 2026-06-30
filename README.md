@@ -43,6 +43,7 @@ This is not a resume parser. It's an **entity resolution and data fusion engine*
 | 🔍 **Full provenance** | Every field in the output is traceable to its source, parser, normalization method, and confidence score |
 | 🛠️ **Configurable projection** | Rename, subset, and reshape the output schema at runtime — no engine code changes required |
 | 🛡️ **Fail-safe validation** | Malformed input never crashes the pipeline — it degrades gracefully to `null` |
+| 🌐 **REST API + UI** | `api.py` exposes the pipeline as an API, with a lightweight `frontend/` UI to run it interactively |
 
 ---
 
@@ -69,7 +70,7 @@ Projection Layer  ──▶  Schema Validation
 Final Candidate JSON
 ```
 
-📐 The full architecture, trust-engine math, merge policy, and research basis are documented in detail in the **[Design Document](./docs/Candidate_Data_Transformer_Design_Document.pdf)**.
+📐 The full architecture, trust-engine math, merge policy, and research basis are documented in detail in the **[Design Document](./docs/Candidate_Data_Transformer_Design_Document%20(1).pdf)**.
 
 ---
 
@@ -134,7 +135,9 @@ Every field above ships with a parallel **provenance record**: `{ field, source,
 | **Entity Matching** | `RapidFuzz` |
 | **Validation** | `Pydantic` |
 | **External API** | `requests` + GitHub REST API |
-| **CLI** | `argparse` |
+| **Backend API** | `api.py` — REST endpoint exposing the pipeline |
+| **Frontend** | HTML / CSS / vanilla JS (`frontend/`) — lightweight UI over the API |
+| **CLI** | `argparse` (`main.py`) |
 | **Testing** | `pytest` |
 | **Tooling** | Git / GitHub |
 
@@ -144,27 +147,32 @@ Every field above ships with a parallel **provenance record**: `{ field, source,
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/<your-username>/candidate-data-transformer.git
-cd candidate-data-transformer
+git clone https://github.com/Santhosh-2226/eightfold-candidate-transformer.git
+cd eightfold-candidate-transformer
 
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Run the pipeline against sample sources
-python -m transformer.cli \
-  --csv samples/recruiter.csv \
-  --ats samples/ats.json \
-  --resume samples/resume.pdf \
-  --notes samples/notes.txt \
-  --github-username octocat \
-  --out candidate_profile.json
+# 3. Run the full pipeline directly (CLI entry point)
+python main_pipeline.py
 
-# 4. Run with a custom output projection
-python -m transformer.cli --config configs/projection.yaml --out custom_profile.json
+# — or run via main.py with sample data —
+python main.py
+
+# 4. Run the REST API server
+python api.py
+# → serves the pipeline as an API; open frontend/index.html
+#   (or the configured host/port) to use the UI
 
 # 5. Run the test suite
 pytest -v
+# or
+python test_pipeline.py
 ```
+
+Sample input sources live in `sample_data/` (`recruiters.csv`, `ats.json`, `resume.txt`, `notes.txt`), and example pipeline runs are pre-generated in `sample_data/output_default.json` and `sample_data/output_custom_config.json`.
+
+Output schema and projection behavior can be tuned in `config/settings.py` and `config/sample_config.json` without touching pipeline code.
 
 ### Example output (truncated)
 
@@ -194,23 +202,80 @@ pytest -v
 ## 🗂️ Project Structure
 
 ```
-candidate-data-transformer/
-├── transformer/
-│   ├── parsers/          # ResumeParser, CSVParser, ATSParser, GithubParser, NotesParser
-│   ├── mapping/          # Schema mapping per source
-│   ├── normalize/        # Phone, date, country, email normalizers
-│   ├── canonical/        # Canonical dictionaries (companies, skills)
-│   ├── matching/         # Entity resolution cascade
-│   ├── trust/            # Trust engine & conflict resolution
-│   ├── projection/       # Runtime-configurable output projection
-│   └── cli.py
-├── configs/               # Reliability weights, projection configs
-├── samples/                # Sample input sources
-├── docs/
-│   ├── Candidate_Data_Transformer_Design_Document (1).pdf
-│   └── architecture_diagram.png
+eightfold-candidate-transformer/
+├── api.py                    # REST API entry point — serves the pipeline
+├── main.py                   # CLI entry point
+├── main_pipeline.py          # Orchestrates the full pipeline end-to-end
+├── test_pipeline.py          # Pipeline-level tests
+├── requirements.txt
+│
+├── parsers/                  # Source-specific parsers
+│   ├── csv_parser.py
+│   ├── ats_parser.py
+│   ├── resume_parser.py
+│   ├── notes_parser.py
+│   ├── github_parser.py
+│   └── registry.py           # Parser Registry — routes sources to parsers
+│
+├── mapper/
+│   └── schema_mapper.py      # Maps source fields → canonical schema
+│
+├── extractor/
+│   ├── extractor.py          # Structured field extraction
+│   └── skills_vocab.py       # Skill canonicalization vocabulary
+│
+├── canonicalizer/
+│   └── canonicalizer.py      # Company / skill synonym collapsing
+│
+├── normalizer/
+│   └── normalizer.py         # Phone, date, country, email normalization
+│
+├── matcher/
+│   └── matcher.py            # Entity resolution cascade
+│
+├── resolver/
+│   └── resolver.py           # Conflict resolution across sources
+│
+├── trust/
+│   └── trust.py              # Trust Engine — confidence scoring
+│
+├── provenance/
+│   └── provenance.py         # Per-field provenance tracking
+│
+├── projection/
+│   └── projector.py          # Runtime-configurable output projection
+│
+├── validator/
+│   ├── validator.py          # Input validation, fail-safe checks
+│   └── schema_validator.py   # Output schema validation
+│
+├── schemas/
+│   └── canonical.py          # Canonical candidate schema (Pydantic models)
+│
+├── config/
+│   ├── settings.py           # Reliability weights, thresholds
+│   └── sample_config.json    # Example runtime projection config
+│
+├── sample_data/
+│   ├── recruiters.csv
+│   ├── ats.json
+│   ├── resume.txt
+│   ├── notes.txt
+│   ├── output_default.json
+│   ├── output_custom_config.json
+│   └── test_results.txt
+│
+├── frontend/
+│   ├── index.html            # Minimal UI over the API
+│   ├── app.js
+│   └── style.css
+│
 ├── tests/
-└── requirements.txt
+│   └── test_pipeline.py
+│
+└── docs/
+    ├── Candidate_Data_Transformer_Design_Document (1).pdf
+    └── architecture_diagram.png
 ```
 
 ---
