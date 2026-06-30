@@ -1,0 +1,935 @@
+
+C:\Users\santh\Downloads\eightfold\candidate-transformer>(echo ===== parsers\resume_parser.py =====   & type "parsers\resume_parser.py"   & echo.) 
+===== parsers\resume_parser.py ===== 
+"""
+Parser for resume files (PDF or plain text).
+Rule-based extraction only (regex + section heuristics) -- no LLM,
+to keep the pipeline fully deterministic.
+
+Extracts:
+  - full_name, email, phone
+  - skills (full 80+ vocabulary via shared skills_vocab)
+  - experience[] with company, title, start, end, summary
+  - education[] with institution, degree, field, end_year, cgpa
+  - years_experience (computed from internship date spans; falls back
+    to the year-range heuristic)
+"""
+import re
+from typing import List, Optional, Dict, Any
+from schemas.canonical import RawRecord
+from extractor.skills_vocab import KNOWN_SKILLS
+
+# ── Regex primitives ────────────────────────────────────────────────────────
+EMAIL_RE    = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+PHONE_RE    = re.compile(r"(\+?\d[\d\s\-\(\)]{7,}\d)")
+YEAR_RE     = re.compile(r"(19|20)\d{2}")
+
+# Month names / abbreviations → zero-padded number
+_MONTHS = {
+    "jan": "01", "feb": "02", "mar": "03", "apr": "04",
+    "may": "05", "jun": "06", "jul": "07", "aug": "08",
+    "sep": "09", "oct": "10", "nov": "11", "dec": "12",
+}
+
+# e.g.  "May 2025", "Aug 2024", "2024-08", "08/2024"
+DATE_RE = re.compile(
+    r"(?:(?P<mon>[A-Za-z]{3,9})\.?\s+(?P<yr1>\d{4})"  # "May 2025"
+    r"|(?P<yr2>\d{4})[/-](?P<mon2>\d{2})"              # "2024-08"
+    r"|(?P<mon3>\d{2})/(?P<yr3>\d{4}))",               # "08/2024"
+    re.IGNORECASE,
+)
+
+# Matches a date range: "May 2025 – Jul 2025" / "Aug 2024 - Oct 2024" / "2023 – Present"
+RANGE_RE = re.compile(
+    r"((?:[A-Za-z]{3,9}\.?\s+)?\d{4})\s*[-–—to]+\s*((?:[A-Za-z]{3,9}\.?\s+)?\d{4}|[Pp]resent|[Cc]urrent)",
+    re.IGNORECASE,
+)
+
+# Section header detector (case-insensitive, tolerates bold/underline markers)
+def _section_re(name: str) -> re.Pattern:
+    return re.compile(r"^\s*" + re.escape(name) + r"\s*:?\s*$", re.IGNORECASE)
+
+SECTION_HEADERS = {
+    "experience":  re.compile(r"^\s*(experience|work experience|internship|internships|professional experience)\s*:?\s*$", re.IGNORECASE),
+    "education":   re.compile(r"^\s*(education|academic background|qualifications)\s*:?\s*$", re.IGNORECASE),
+    "skills":      re.compile(r"^\s*(skills|technical skills|key skills|competencies)\s*:?\s*$", re.IGNORECASE),
+    "projects":    re.compile(r"^\s*(projects|personal projects|key projects)\s*:?\s*$", re.IGNORECASE),
+    "summary":     re.compile(r"^\s*(summary|profile|about|objective)\s*:?\s*$", re.IGNORECASE),
+    "certifications": re.compile(r"^\s*(certifications?|certificates?|courses?)\s*:?\s*$", re.IGNORECASE),
+    "links":       re.compile(r"^\s*(links?|profiles?|contact|online presence)\s*:?\s*$", re.IGNORECASE),
+}
+
+
+# ── Text extraction ─────────────────────────────────────────────────────────
+def _extract_text(path: str) -> Optional[str]:
+    if path.lower().endswith(".pdf"):
+        try:
+            import pdfplumber
+            parts = []
+            with pdfplumber.open(path) as pdf:
+                for page in pdf.pages:
+                    parts.append(page.extract_text() or "")
+            return "\n".join(parts)
+        except Exception:
+            return None
+    else:
+        try:
+            with open(path, encoding="utf-8") as f:
+                return f.read()
+        except FileNotFoundError:
+            return None
+
+
+# ── Section splitting ───────────────────────────────────────────────────────
+def _split_sections(text: str) -> Dict[str, str]:
+    """Split resume text into named sections. Returns {section_name: body_text}."""
+    lines = text.splitlines()
+    sections: Dict[str, str] = {"header": []}
+    current = "header"
+    for line in lines:
+        matched = False
+        for sec_name, pattern in SECTION_HEADERS.items():
+            if pattern.match(line):
+                current = sec_name
+                sections.setdefault(current, [])
+                matched = True
+                break
+        if not matched:
+            sections.setdefault(current, []).append(line)
+    return {k: "\n".join(v) for k, v in sections.items()}
+
+
+# ── Date parsing ────────────────────────────────────────────────────────────
+def _parse_date(raw: str) -> Optional[str]:
+    """Convert a raw date string to YYYY-MM. Returns None if unparseable."""
+    raw = raw.strip()
+    m = DATE_RE.search(raw)
+    if not m:
+        # Bare year "2025"
+        y = YEAR_RE.search(raw)
+        return f"{y.group()}-01" if y else None
+    g = m.groupdict()
+    if g.get("mon") and g.get("yr1"):
+        mon = _MONTHS.get(g["mon"].lower()[:3])
+        return f"{g['yr1']}-{mon}" if mon else f"{g['yr1']}-01"
+    if g.get("yr2") and g.get("mon2"):
+        return f"{g['yr2']}-{g['mon2'].zfill(2)}"
+    if g.get("mon3") and g.get("yr3"):
+        return f"{g['yr3']}-{g['mon3'].zfill(2)}"
+    return None
+
+
+def _parse_range(text: str):
+    """Return (start_YYYY-MM, end_YYYY-MM_or_Present) or (None, None)."""
+    m = RANGE_RE.search(text)
+    if not m:
+        return None, None
+    start = _parse_date(m.group(1))
+    end_raw = m.group(2).strip()
+    end = "Present" if end_raw.lower() in ("present", "current") else _parse_date(end_raw)
+    return start, end
+
+
+def _months_between(start: Optional[str], end: Optional[str]) -> float:
+    """Return fractional years between two YYYY-MM strings."""
+    if not start:
+        return 0.0
+    import datetime
+    try:
+        sy, sm = int(start[:4]), int(start[5:7])
+        if end and end != "Present":
+            ey, em = int(end[:4]), int(end[5:7])
+        else:
+            today = datetime.date.today()
+            ey, em = today.year, today.month
+        months = (ey - sy) * 12 + (em - sm)
+        return round(max(0.0, months / 12.0), 2)
+    except Exception:
+        return 0.0
+
+
+# ── Name heuristic ──────────────────────────────────────────────────────────
+def _guess_name(text: str) -> Optional[str]:
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        words = line.split()
+        if (1 < len(words) <= 4
+                and all(w[0:1].isupper() for w in words)
+                and "@" not in line
+                and not any(ch.isdigit() for ch in line)):
+            return line
+        break
+    return None
+
+
+# ── Experience extraction ───────────────────────────────────────────────────
+def _extract_experience(section_text: str) -> List[Dict[str, Any]]:
+    """
+    Parses the experience / internship section.
+    Handles common resume formats:
+      Company Name (standalone line), then Role | Date Range on next line
+      Company Name | Role Title  (pipe-separated, no date on same line)
+      Role Title | Date Range on same line (date-embedded format)
+      followed by bullet-point summary lines
+    """
+    entries = []
+    lines = [l.strip() for l in section_text.splitlines() if l.strip()]
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        # Skip pure bullet lines not belonging to a new entry header
+        if line.startswith(("•", "*")) and not RANGE_RE.search(line):
+            i += 1
+            continue
+
+        # Try to detect a company/role line
+        company, title = None, None
+        start, end = None, None
+
+        # Case A: "Role Title | Date Range" — date embedded in same line via pipe
+        if "|" in line:
+            parts = [p.strip() for p in line.split("|", 1)]
+            if len(parts) == 2:
+                left, right = parts
+                rs, re = _parse_range(right)
+                if rs:
+                    # Left part is the role title; company is the PREVIOUS non-bullet line
+                    title = left
+                    start, end = rs, re
+                    # Look backward for company (the standalone line just before this)
+                    if i > 0 and not lines[i-1].startswith(("•", "-", "*")):
+                        company = entries[-1]['company'] if entries else lines[i-1]
+                    i += 1
+                    entries.append({'company': company, 'title': title, 'start': start, 'end': end, 'summary': None})
+                    continue
+                else:
+                    # Standard: "Company | Role" with no date
+                    company, title = left, right
+
+        # Case B: "Company – Role" or "Company — Role" (dash-separated, no date)
+        if company is None:
+            for sep in [" – ", " — "]:
+                if sep in line and not RANGE_RE.search(line):
+                    parts = [p.strip() for p in line.split(sep, 1)]
+                    if len(parts) == 2 and parts[0] and parts[1]:
+                        company, title = parts[0], parts[1]
+                        break
+
+        # Case C: standalone company name line (no separator, no date)
+        if company is None and not RANGE_RE.search(line) and len(line.split()) <= 8:
+            company = line
+            # Peek at next line for role
+            if i + 1 < len(lines):
+                next_line = lines[i + 1]
+                rs, re = _parse_range(next_line)
+                if not rs and not next_line.startswith(("•", "-", "*")) and len(next_line.split()) <= 10:
+                    title = next_line
+                    i += 1
+
+        if company is None:
+            i += 1
+            continue
+
+        # Look ahead for date range (within next 3 lines) if not already found
+        j = i + 1
+        found_date = bool(start)
+        summary_lines = []
+        if not found_date:
+            while j < len(lines) and j < i + 5:
+                s, e = _parse_range(lines[j])
+                if s:
+                    start, end = s, e
+                    found_date = True
+                    j += 1
+                    break
+                j += 1
+
+        # Collect summary bullet lines after date
+        k = j
+        while k < len(lines) and k < j + 6:
+            lk = lines[k]
+            if any(p.match(lk) for p in SECTION_HEADERS.values()):
+                break
+            if lk.startswith(("•", "-", "*")) or (lk and lk[0].isupper() and not RANGE_RE.search(lk)):
+                summary_lines.append(lk.lstrip("•-* ").strip())
+                k += 1
+            else:
+                break
+
+        summary = " ".join(summary_lines[:3]) if summary_lines else None
+
+        if company or title:
+            entries.append({
+                "company": company,
+                "title": title,
+                "start": start,
+                "end": end,
+                "summary": summary,
+            })
+        # Advance past the consumed lines
+        i = k if (found_date and k > i + 1) else i + 1
+
+    return entries
+
+
+# ── Education extraction ────────────────────────────────────────────────────
+_DEGREE_WORDS = re.compile(
+    r"\b(b\.?tech|b\.?e\b|btech|be\b|m\.?tech|mtech|m\.?sc|bsc|b\.?sc|"
+    r"b\.?com|mba|ph\.?d|bachelor|master|associate|diploma)\b",
+    re.IGNORECASE,
+)
+_CGPA_RE  = re.compile(r"(?:cgpa|gpa|score)\s*[:\-–]?\s*([\d.]+)", re.IGNORECASE)
+_YEAR_END = re.compile(r"(?:20)\d{2}")
+
+
+def _extract_education(section_text: str) -> List[Dict[str, Any]]:
+    entries = []
+    lines = [l.strip() for l in section_text.splitlines() if l.strip()]
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        institution, degree, field_of_study, end_year, cgpa = None, None, None, None, None
+
+        # Does this line contain a degree keyword?
+        deg_match = _DEGREE_WORDS.search(line)
+        if deg_match:
+            degree = deg_match.group().upper().replace(".", "")
+            # Field of study: text after degree word (strip common conjunctions)
+            after = line[deg_match.end():].strip().lstrip("–—-:, ")
+            # Remove "in" prefix
+            after = re.sub(r"^in\s+", "", after, flags=re.IGNORECASE).strip()
+            field_of_study = after if after else None
+
+            # Institution: usually the previous or next line
+            if i > 0 and not _DEGREE_WORDS.search(lines[i - 1]):
+                institution = lines[i - 1]
+            elif i + 1 < len(lines) and not _DEGREE_WORDS.search(lines[i + 1]):
+                institution = lines[i + 1]
+
+        elif len(line.split()) >= 2 and not line.startswith(("•", "-")):
+            # Could be institution name — peek ahead for degree
+            if i + 1 < len(lines) and _DEGREE_WORDS.search(lines[i + 1]):
+                institution = line
+                deg_match = _DEGREE_WORDS.search(lines[i + 1])
+                degree = deg_match.group().upper().replace(".", "")
+                after = lines[i + 1][deg_match.end():].strip().lstrip("–—-:, ")
+                after = re.sub(r"^in\s+", "", after, flags=re.IGNORECASE).strip()
+                field_of_study = after if after else None
+                i += 1
+
+        if institution or degree:
+            # Also check the current line itself for year/cgpa
+            cg_cur = _CGPA_RE.search(line)
+            if cg_cur and cgpa is None:
+                try:
+                    cgpa = float(cg_cur.group(1))
+                except ValueError:
+                    pass
+            yr_cur = _YEAR_END.findall(line)
+            if yr_cur and not end_year:
+                end_year = int(max(yr_cur))
+
+            # Scan next 3 lines for CGPA / year refinements
+            for j in range(i + 1, min(i + 4, len(lines))):
+                if any(p.match(lines[j]) for p in SECTION_HEADERS.values()):
+                    break
+                cg = _CGPA_RE.search(lines[j])
+                if cg and cgpa is None:
+                    try:
+                        cgpa = float(cg.group(1))
+                    except ValueError:
+                        pass
+                yr_m = _YEAR_END.findall(lines[j])
+                if yr_m and not end_year:
+                    end_year = int(max(yr_m))
+            entries.append({
+                "institution": institution,
+                "degree": degree,
+                "field": field_of_study,
+                "end_year": end_year,
+                "cgpa": cgpa,
+            })
+        i += 1
+    return entries
+
+
+# ── Years experience ────────────────────────────────────────────────────────
+def _compute_years_from_experience(exp_entries: List[Dict]) -> Optional[float]:
+    total = sum(_months_between(e.get("start"), e.get("end")) for e in exp_entries)
+    return round(total, 2) if total > 0 else None
+
+
+def _guess_years_heuristic(text: str) -> Optional[float]:
+    """Fallback: span of years mentioned in text."""
+    years = sorted({int(m.group()) for m in YEAR_RE.finditer(text)})
+    if len(years) >= 2:
+        span = years[-1] - years[0]
+        if 0 < span <= 45:
+            return float(span)
+    return None
+
+
+# ── Main entry point ─────────────────────────────────────────────────────────
+def parse_resume(path: str) -> List[RawRecord]:
+    text = _extract_text(path)
+    warnings = []
+    if text is None:
+        return [RawRecord(
+            source_type="resume", source_name="resume",
+            fields={}, warnings=["could not read resume file; source skipped"],
+        )]
+    if not text.strip():
+        warnings.append("resume appears empty (e.g. scanned image with no text layer)")
+        return [RawRecord(source_type="resume", source_name="resume", fields={}, warnings=warnings)]
+
+    sections = _split_sections(text)
+    lower = text.lower()
+
+    # Contact
+    emails = EMAIL_RE.findall(text)
+    phones = PHONE_RE.findall(text)
+
+    # Skills (full vocabulary, case-insensitive word-boundary match)
+    skills = sorted({
+        s for s in KNOWN_SKILLS
+        if re.search(r"(?<![a-z0-9])" + re.escape(s.lower()) + r"(?![a-z0-9])", lower)
+    })
+
+    # Experience
+    exp_section = sections.get("experience", "")
+    experience = _extract_experience(exp_section) if exp_section.strip() else []
+
+    # Education
+    edu_section = sections.get("education", "")
+    education = _extract_education(edu_section) if edu_section.strip() else []
+
+    # Years experience: prefer computed from actual spans, fall back to heuristic
+    years_exp = _compute_years_from_experience(experience)
+    if years_exp is None:
+        years_exp = _guess_years_heuristic(text)
+
+    fields = {
+        "raw_text": text,
+        "full_name": _guess_name(sections.get("header", text)),
+        "email": emails[0] if emails else None,
+        "phone": phones[0].strip() if phones else None,
+        "skills": skills,
+        "years_experience": years_exp,
+        "experience": experience,
+        "education": education,
+    }
+    return [RawRecord(
+        source_type="resume", source_name="resume",
+        fields=fields, warnings=warnings,
+    )]
+
+
+C:\Users\santh\Downloads\eightfold\candidate-transformer>(echo ===== parsers\github_parser.py =====   & type "parsers\github_parser.py"   & echo.) 
+===== parsers\github_parser.py ===== 
+"""
+Parser for a GitHub profile, given a username or profile URL.
+Uses the public REST API (no auth needed for public profiles, but
+subject to rate limiting -- failures degrade gracefully to an empty
+record rather than crashing the run).
+"""
+import re
+from typing import List, Optional
+import requests
+from schemas.canonical import RawRecord
+
+
+def _extract_username(url_or_username: str) -> Optional[str]:
+    m = re.search(r"github\.com/([A-Za-z0-9_-]+)", url_or_username)
+    if m:
+        return m.group(1)
+    if re.fullmatch(r"[A-Za-z0-9_-]+", url_or_username.strip()):
+        return url_or_username.strip()
+    return None
+
+
+def parse_github(url_or_username: str, timeout: float = 5.0) -> List[RawRecord]:
+    username = _extract_username(url_or_username)
+    if not username:
+        return []
+
+    warnings = []
+    fields = {"login": username}
+    try:
+        resp = requests.get(f"https://api.github.com/users/{username}", timeout=timeout)
+        if resp.status_code == 200:
+            data = resp.json()
+            fields.update({
+                "name": data.get("name"),
+                "bio": data.get("bio"),
+                "company": data.get("company"),
+                "blog": data.get("blog"),
+                "location": data.get("location"),
+                "public_repos": data.get("public_repos"),
+                "html_url": data.get("html_url"),
+            })
+        else:
+            warnings.append(f"github api returned status {resp.status_code}")
+    except requests.RequestException as e:
+        warnings.append(f"github api unreachable: {e}")
+
+    return [RawRecord(
+        source_type="github",
+        source_name=f"github_{username}",
+        fields=fields,
+        warnings=warnings,
+    )]
+
+
+C:\Users\santh\Downloads\eightfold\candidate-transformer>(echo ===== trust\trust.py =====   & type "trust\trust.py"   & echo.) 
+===== trust\trust.py ===== 
+"""
+Trust Engine.
+
+Implements the 3-factor trust formula adapted from data-fusion /
+truth-discovery literature (Michelfeit, Knap & Necasky, arXiv:1410.7990):
+
+    trust(value) = source_reliability
+                 x (1 - conflict_penalty)
+                 x agreement_boost
+
+Now also returns the three components (reliability, conflict_penalty,
+agreement_boost) so callers can expose the full formula breakdown in
+provenance and the UI.
+"""
+from typing import List, Tuple
+from rapidfuzz import fuzz
+from config.settings import SOURCE_RELIABILITY, TRUST_FLOOR
+
+Claim = Tuple[str, object, str, str, str]  # field, value, source_type, source_name, method
+
+# Fields where multiple DISTINCT values legitimately co-exist.
+MULTI_VALUE_FIELDS = {"skill", "email", "phone"}
+
+
+def _string_distance(a: str, b: str) -> float:
+    """0 = identical, 1 = completely different."""
+    if a == b:
+        return 0.0
+    score = fuzz.ratio(str(a).lower(), str(b).lower())
+    return 1.0 - (score / 100.0)
+
+
+def _numeric_distance(a: float, b: float, scale: float = 10.0) -> float:
+    try:
+        a, b = float(a), float(b)
+    except (TypeError, ValueError):
+        return 1.0
+    return min(1.0, abs(a - b) / scale)
+
+
+def _distance(field: str, a, b) -> float:
+    if field in ("years_experience",):
+        return _numeric_distance(a, b)
+    return _string_distance(str(a), str(b))
+
+
+def score_claims_for_field(claims_for_field: List[Claim]) -> List[dict]:
+    """
+    claims_for_field: all claims for ONE canonical field of ONE candidate.
+
+    Returns a list of dicts: {value, sources, source_names, methods, trust,
+    below_floor, reliability, conflict_penalty, agreement_boost}
+    — the three formula components are now returned alongside the final trust
+    score so callers can display the full breakdown.
+    """
+    if not claims_for_field:
+        return []
+
+    # Group by distinct value (case-folded)
+    groups: dict = {}
+    for claim in claims_for_field:
+        field, value, source_type, source_name, method = claim[:5]
+        key = str(value).strip().lower()
+        groups.setdefault(key, []).append((value, source_type, source_name, method))
+
+    field_name = claims_for_field[0][0]
+    results = []
+
+    for key, entries in groups.items():
+        # ── Factor 1: source reliability ────────────────────────────────────
+        reliabilities = [SOURCE_RELIABILITY.get(st, 0.5) for (_, st, _, _) in entries]
+        source_reliability = max(reliabilities)
+
+        # ── Factor 2: conflict penalty ──────────────────────────────────────
+        other_groups = [g for k, g in groups.items() if k != key]
+        if other_groups and field_name not in MULTI_VALUE_FIELDS:
+            weighted_distances = []
+            for other_entries in other_groups:
+                other_value = other_entries[0][0]
+                other_reliability = max(
+                    SOURCE_RELIABILITY.get(st, 0.5) for (_, st, _, _) in other_entries
+                )
+                d = _distance(field_name, entries[0][0], other_value)
+                weighted_distances.append(d * other_reliability)
+            conflict_penalty = min(1.0, sum(weighted_distances) / len(weighted_distances))
+        else:
+            conflict_penalty = 0.0
+
+        # ── Factor 3: agreement boost ────────────────────────────────────────
+        distinct_sources = len({st for (_, st, _, _) in entries})
+        agreement_boost = (
+            min(1.0, 0.6 + 0.2 * (distinct_sources - 1))
+            if distinct_sources > 1
+            else 0.75
+        )
+
+        trust = source_reliability * (1 - conflict_penalty) * agreement_boost
+        trust = round(max(0.0, min(1.0, trust)), 3)
+
+        results.append({
+            "value":            entries[0][0],
+            "sources":          sorted({st for (_, st, _, _) in entries}),
+            "source_names":     [sn for (_, _, sn, _) in entries],
+            "methods":          sorted({m for (_, _, _, m) in entries}),
+            "trust":            trust,
+            "below_floor":      trust < TRUST_FLOOR,
+            # Formula breakdown — exposed for provenance + UI
+            "reliability":      round(source_reliability, 3),
+            "conflict_penalty": round(conflict_penalty, 3),
+            "agreement_boost":  round(agreement_boost, 3),
+        })
+
+    return sorted(results, key=lambda r: r["trust"], reverse=True)
+
+
+C:\Users\santh\Downloads\eightfold\candidate-transformer>(echo ===== resolver\resolver.py =====   & type "resolver\resolver.py"   & echo.) 
+===== resolver\resolver.py ===== 
+"""
+Conflict Resolution / Golden Record Construction.
+
+Implements a small library of NAMED resolution functions
+(adapted from Michelfeit, Knap & Necasky, arXiv:1410.7990),
+selected per field. "Deciding" functions choose among observed
+values; "mediating" functions compute a new value (e.g. median).
+We only ever select or compute from OBSERVED data -- never invent.
+"""
+from typing import List, Optional
+from config.settings import TRUST_FLOOR
+from trust.trust import score_claims_for_field
+
+
+def resolve_best(scored: List[dict]) -> Optional[dict]:
+    """Deciding function: highest-trust value wins."""
+    if not scored:
+        return None
+    top = scored[0]
+    return None if top["below_floor"] else top
+
+
+def resolve_best_source(scored: List[dict], preferred_source: str) -> Optional[dict]:
+    """Deciding function: prefer a named source if it claimed a value at all."""
+    for r in scored:
+        if preferred_source in r["sources"]:
+            return None if r["below_floor"] else r
+    return resolve_best(scored)
+
+
+def resolve_vote(scored: List[dict]) -> Optional[dict]:
+    """Deciding function: value with the most distinct supporting sources wins."""
+    if not scored:
+        return None
+    top = max(scored, key=lambda r: len(r["sources"]))
+    return None if top["trust"] < TRUST_FLOOR else top
+
+
+def resolve_concat(scored: List[dict]) -> List[dict]:
+    """Mediating function: union of all above-floor values (e.g. skills, emails)."""
+    return [r for r in scored if not r["below_floor"]]
+
+
+# field -> which resolution function to apply
+FIELD_STRATEGY = {
+    "full_name": "best",
+    "email": "concat",       # emails[] is a list in the output schema
+    "phone": "concat",       # phones[] is a list
+    "current_company": "best",
+    "title": "best",
+    "headline": "best",
+    "years_experience": "best",
+    "skill": "concat",       # skills[] union, each with its own confidence
+}
+
+
+def resolve_field(field: str, claims_for_field: list, preferred_source: str = None):
+    scored = score_claims_for_field(claims_for_field)
+    strategy = FIELD_STRATEGY.get(field, "best")
+
+    if strategy == "best":
+        return resolve_best(scored)
+    if strategy == "best_source" and preferred_source:
+        return resolve_best_source(scored, preferred_source)
+    if strategy == "vote":
+        return resolve_vote(scored)
+    if strategy == "concat":
+        return resolve_concat(scored)
+    return resolve_best(scored)
+
+
+C:\Users\santh\Downloads\eightfold\candidate-transformer>(echo ===== canonicalizer\canonicalizer.py =====   & type "canonicalizer\canonicalizer.py"   & echo.) 
+===== canonicalizer\canonicalizer.py ===== 
+"""
+Canonicalization: collapse semantically-equivalent values to one
+canonical form. This is distinct from formatting normalization
+(E.164, YYYY-MM) -- it's about recognizing "Google Inc." and "Google"
+are the same entity, or "CPP" and "C++" are the same skill.
+
+Deliberately a small static dictionary, not ML-based -- keeps this
+fully deterministic and explainable.
+"""
+import re
+
+SKILL_ALIASES = {
+    "cpp": "C++",
+    "c++": "C++",
+    "js": "JavaScript",
+    "javascript": "JavaScript",
+    "ts": "TypeScript",
+    "typescript": "TypeScript",
+    "ml": "Machine Learning",
+    "machine learning": "Machine Learning",
+    "nlp": "NLP",
+    "node": "Node.js",
+    "node.js": "Node.js",
+}
+
+COMPANY_SUFFIX_RE = re.compile(
+    r"\s*[,]?\s*\b(inc\.?|llc\.?|ltd\.?|corp\.?|corporation|limited)\b\.?\s*$",
+    re.IGNORECASE,
+)
+
+DEGREE_ALIASES = {
+    "master of science": "MS",
+    "m.s.": "MS",
+    "ms": "MS",
+    "bachelor of technology": "B.Tech",
+    "b.tech": "B.Tech",
+    "btech": "B.Tech",
+    "bachelor of science": "BS",
+    "bs": "BS",
+}
+
+
+def canonicalize_skill(name: str) -> str:
+    key = name.strip().lower()
+    return SKILL_ALIASES.get(key, name.strip().title())
+
+
+def canonicalize_company(name: str) -> str:
+    cleaned = COMPANY_SUFFIX_RE.sub("", name.strip())
+    return cleaned.strip() or name.strip()
+
+
+def canonicalize_degree(name: str) -> str:
+    key = name.strip().lower()
+    return DEGREE_ALIASES.get(key, name.strip())
+
+
+C:\Users\santh\Downloads\eightfold\candidate-transformer>(echo ===== schemas\canonical.py =====   & type "schemas\canonical.py"   & echo.) 
+===== schemas\canonical.py ===== 
+"""
+Canonical internal schema for a candidate profile.
+This is the FIXED internal representation every source gets mapped into,
+before any runtime projection config is applied.
+"""
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field
+
+
+class Location(BaseModel):
+    city: Optional[str] = None
+    region: Optional[str] = None
+    country: Optional[str] = None  # ISO-3166 alpha-2
+
+
+class Links(BaseModel):
+    linkedin: Optional[str] = None
+    github: Optional[str] = None
+    portfolio: Optional[str] = None
+    other: List[str] = Field(default_factory=list)
+
+
+class Skill(BaseModel):
+    name: str
+    confidence: float
+    sources: List[str] = Field(default_factory=list)
+
+
+class Experience(BaseModel):
+    company: Optional[str] = None
+    title: Optional[str] = None
+    start: Optional[str] = None   # YYYY-MM
+    end: Optional[str] = None     # YYYY-MM or "Present"
+    summary: Optional[str] = None
+
+
+class Education(BaseModel):
+    institution: Optional[str] = None
+    degree: Optional[str] = None
+    field: Optional[str] = None
+    end_year: Optional[int] = None
+    cgpa: Optional[float] = None
+
+
+class ProvenanceEntry(BaseModel):
+    field: str
+    value: Any = None
+    source: Optional[str] = None
+    method: Optional[str] = None
+    normalization: Optional[str] = None
+    normalization_trace: Optional[str] = None   # e.g. "6374071150 → +916374071150"
+    trust: Optional[float] = None
+    reasons: List[str] = Field(default_factory=list)
+    confidence_breakdown: Optional[Dict[str, float]] = None  # {reliability, conflict_penalty, agreement_boost}
+    competing_values: List[Dict[str, Any]] = Field(default_factory=list)  # list of all observed values and their scores/sources
+
+
+class CanonicalCandidate(BaseModel):
+    candidate_id: str
+    full_name: Optional[str] = None
+    emails: List[str] = Field(default_factory=list)
+    phones: List[str] = Field(default_factory=list)
+    location: Location = Field(default_factory=Location)
+    links: Links = Field(default_factory=Links)
+    headline: Optional[str] = None
+    years_experience: Optional[float] = None
+    skills: List[Skill] = Field(default_factory=list)
+    experience: List[Experience] = Field(default_factory=list)
+    education: List[Education] = Field(default_factory=list)
+    provenance: List[ProvenanceEntry] = Field(default_factory=list)
+    overall_confidence: float = 0.0
+
+
+class RawRecord(BaseModel):
+    """
+    Intermediate object every parser must return.
+    Loosely typed on purpose -- parsers only know their own source's shape.
+    `source_type` and `source_name` are used downstream for trust scoring.
+    """
+    source_type: str       # "csv" | "ats_json" | "github" | "resume" | "notes"
+    source_name: str       # human-readable, e.g. "recruiter_csv_row_3"
+    fields: Dict[str, Any] = Field(default_factory=dict)
+    warnings: List[str] = Field(default_factory=list)
+
+
+C:\Users\santh\Downloads\eightfold\candidate-transformer>(echo ===== provenance\provenance.py =====   & type "provenance\provenance.py"   & echo.) 
+===== provenance\provenance.py ===== 
+"""
+Provenance Generator.
+Turns a resolved field result into a structured ProvenanceEntry,
+explaining what was selected, from where, by what method, with what
+trust, and why.
+
+Now also stores:
+  - normalization_trace: e.g. "6374071150 → +916374071150"
+  - confidence_breakdown: {reliability, conflict_penalty, agreement_boost}
+"""
+from typing import Optional
+from schemas.canonical import ProvenanceEntry
+
+
+def build_reasons(resolved: dict, strategy: str, was_conflict: bool) -> list:
+    reasons = []
+    n = len(resolved.get("sources", []))
+    if n > 1:
+        reasons.append(f"Confirmed by {n} independent sources")
+    else:
+        reasons.append("Supported by a single source")
+    if was_conflict:
+        reasons.append("Selected over conflicting value(s) from other sources")
+    # Formula breakdown as a readable reason
+    r  = resolved.get("reliability", 0)
+    cp = resolved.get("conflict_penalty", 0)
+    ab = resolved.get("agreement_boost", 0)
+    reasons.append(
+        f"Trust = {r:.2f} (reliability) × (1 − {cp:.2f}) (conflict) × {ab:.2f} (agreement)"
+    )
+    reasons.append(f"Resolution strategy: {strategy}")
+    return reasons
+
+
+def build_provenance(
+    field: str,
+    resolved: dict,
+    strategy: str,
+    normalization: Optional[str],
+    was_conflict: bool,
+    raw_value: Optional[str] = None,      # original value before normalization
+    competing_values: Optional[list] = None, # all competing values evaluated
+) -> ProvenanceEntry:
+    # Build normalization trace if raw differs from resolved
+    norm_trace = None
+    if raw_value is not None and str(raw_value) != str(resolved["value"]):
+        norm_trace = f"{raw_value} -> {resolved['value']}"
+
+    breakdown = None
+    if "reliability" in resolved:
+        breakdown = {
+            "reliability":      resolved["reliability"],
+            "conflict_penalty": resolved["conflict_penalty"],
+            "agreement_boost":  resolved["agreement_boost"],
+        }
+
+    comp_entries = []
+    if competing_values:
+        for cv in competing_values:
+            comp_entries.append({
+                "value": cv["value"],
+                "sources": cv["sources"],
+                "trust": cv["trust"],
+                "selected": str(cv["value"]) == str(resolved["value"]),
+                "reliability": cv.get("reliability"),
+                "conflict_penalty": cv.get("conflict_penalty"),
+                "agreement_boost": cv.get("agreement_boost"),
+            })
+
+    return ProvenanceEntry(
+        field=field,
+        value=resolved["value"],
+        source=",".join(resolved["sources"]),
+        method=",".join(resolved["methods"]),
+        normalization=normalization,
+        normalization_trace=norm_trace,
+        trust=resolved["trust"],
+        reasons=build_reasons(resolved, strategy, was_conflict),
+        confidence_breakdown=breakdown,
+        competing_values=comp_entries,
+    )
+
+
+C:\Users\santh\Downloads\eightfold\candidate-transformer>(echo ===== config\settings.py =====   & type "config\settings.py"   & echo.) 
+===== config\settings.py ===== 
+"""
+Central config: source reliability priors and trust thresholds.
+Kept in one place so the trust formula stays explainable and tunable.
+"""
+
+# Static prior reliability per source type.
+# Higher = we trust this source type more by default, before
+# looking at agreement/conflict with other sources.
+SOURCE_RELIABILITY = {
+    "csv": 0.90,          # recruiter-entered structured data
+    "ats_json": 0.95,     # system of record, usually validated upstream
+    "github": 0.85,       # public API, structured, but self-reported by candidate
+    "resume": 0.70,       # candidate-authored prose, unverified
+    "notes": 0.50,        # free-text recruiter notes, least structured/reliable
+}
+
+# Below this trust score, a field value is withheld (set to null)
+# rather than asserted -- this is the "honestly-empty over
+# wrong-but-confident" rule from the assignment.
+TRUST_FLOOR = 0.40
+
+# Field-level match keys used for entity resolution, in priority order.
+MATCH_KEY_PRIORITY = ["email", "phone", "fuzzy_name_company"]
+
+# RapidFuzz threshold (0-100) for the fallback name+company match.
+FUZZY_MATCH_THRESHOLD = 88
+

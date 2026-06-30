@@ -1,0 +1,8 @@
+phonenumbers
+dateparser
+pycountry
+rapidfuzz
+pdfplumber
+pydantic
+requests
+pytest

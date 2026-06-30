@@ -1,0 +1,404 @@
+[
+  {
+    "candidate_id": "30aa3844",
+    "full_name": "Jane Doe",
+    "emails": [
+      "jane.doe@gmail.com"
+    ],
+    "phones": [
+      "+919876543210"
+    ],
+    "location": {
+      "city": null,
+      "region": null,
+      "country": null
+    },
+    "links": {
+      "linkedin": null,
+      "github": null,
+      "portfolio": null,
+      "other": []
+    },
+    "headline": null,
+    "years_experience": 8.0,
+    "skills": [
+      {
+        "name": "Machine Learning",
+        "confidence": 0.56,
+        "sources": [
+          "notes",
+          "resume"
+        ]
+      },
+      {
+        "name": "Python",
+        "confidence": 0.56,
+        "sources": [
+          "notes",
+          "resume"
+        ]
+      },
+      {
+        "name": "Aws",
+        "confidence": 0.525,
+        "sources": [
+          "resume"
+        ]
+      },
+      {
+        "name": "Docker",
+        "confidence": 0.525,
+        "sources": [
+          "resume"
+        ]
+      },
+      {
+        "name": "JavaScript",
+        "confidence": 0.525,
+        "sources": [
+          "resume"
+        ]
+      }
+    ],
+    "experience": [
+      {
+        "company": "Google",
+        "title": "Senior Software Engineer",
+        "start": null,
+        "end": null,
+        "summary": null
+      }
+    ],
+    "education": [],
+    "provenance": [
+      {
+        "field": "full_name",
+        "value": "Jane Doe",
+        "source": "ats_json,csv,resume",
+        "method": "ATSParser,CSVParser,ResumeRegex",
+        "normalization": null,
+        "trust": 0.95,
+        "reasons": [
+          "Confirmed by 3 independent sources",
+          "Resolution strategy: best"
+        ]
+      },
+      {
+        "field": "current_company",
+        "value": "Google",
+        "source": "ats_json,csv",
+        "method": "ATSParser+canonical,CSVParser+canonical",
+        "normalization": null,
+        "trust": 0.76,
+        "reasons": [
+          "Confirmed by 2 independent sources",
+          "Resolution strategy: best"
+        ]
+      },
+      {
+        "field": "title",
+        "value": "Senior Software Engineer",
+        "source": "ats_json",
+        "method": "ATSParser",
+        "normalization": null,
+        "trust": 0.565,
+        "reasons": [
+          "Supported by a single source",
+          "Selected over conflicting value(s) from other sources",
+          "Resolution strategy: best"
+        ]
+      },
+      {
+        "field": "years_experience",
+        "value": 8.0,
+        "source": "resume",
+        "method": "ResumeHeuristic",
+        "normalization": null,
+        "trust": 0.525,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: best"
+        ]
+      },
+      {
+        "field": "email",
+        "value": "jane.doe@gmail.com",
+        "source": "ats_json,csv,notes,resume",
+        "method": "ATSParser+lowercase,CSVParser+lowercase,NotesRegex+lowercase,ResumeRegex+lowercase",
+        "normalization": "E.164/lowercase",
+        "trust": 0.95,
+        "reasons": [
+          "Confirmed by 4 independent sources",
+          "Resolution strategy: concat"
+        ]
+      },
+      {
+        "field": "phone",
+        "value": "+919876543210",
+        "source": "ats_json,csv,notes,resume",
+        "method": "ATSParser+E164,CSVParser+E164,NotesRegex+E164,ResumeRegex+E164",
+        "normalization": "E164",
+        "trust": 0.95,
+        "reasons": [
+          "Confirmed by 4 independent sources",
+          "Resolution strategy: concat"
+        ]
+      },
+      {
+        "field": "skill",
+        "value": "Machine Learning",
+        "source": "notes,resume",
+        "method": "NotesKeywordScan+canonical,ResumeKeywordScan+canonical",
+        "normalization": "canonical",
+        "trust": 0.56,
+        "reasons": [
+          "Confirmed by 2 independent sources",
+          "Resolution strategy: concat"
+        ]
+      },
+      {
+        "field": "skill",
+        "value": "Python",
+        "source": "notes,resume",
+        "method": "NotesKeywordScan+canonical,ResumeKeywordScan+canonical",
+        "normalization": "canonical",
+        "trust": 0.56,
+        "reasons": [
+          "Confirmed by 2 independent sources",
+          "Resolution strategy: concat"
+        ]
+      },
+      {
+        "field": "skill",
+        "value": "Aws",
+        "source": "resume",
+        "method": "ResumeKeywordScan+canonical",
+        "normalization": "canonical",
+        "trust": 0.525,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: concat"
+        ]
+      },
+      {
+        "field": "skill",
+        "value": "Docker",
+        "source": "resume",
+        "method": "ResumeKeywordScan+canonical",
+        "normalization": "canonical",
+        "trust": 0.525,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: concat"
+        ]
+      },
+      {
+        "field": "skill",
+        "value": "JavaScript",
+        "source": "resume",
+        "method": "ResumeKeywordScan+canonical",
+        "normalization": "canonical",
+        "trust": 0.525,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: concat"
+        ]
+      }
+    ],
+    "overall_confidence": 0.599
+  },
+  {
+    "candidate_id": "5af90a30",
+    "full_name": "John Smith",
+    "emails": [
+      "john.smith@yahoo.com"
+    ],
+    "phones": [
+      "+918765432109"
+    ],
+    "location": {
+      "city": null,
+      "region": null,
+      "country": null
+    },
+    "links": {
+      "linkedin": null,
+      "github": null,
+      "portfolio": null,
+      "other": []
+    },
+    "headline": null,
+    "years_experience": null,
+    "skills": [],
+    "experience": [
+      {
+        "company": "Amazon",
+        "title": "Product Manager",
+        "start": null,
+        "end": null,
+        "summary": null
+      }
+    ],
+    "education": [],
+    "provenance": [
+      {
+        "field": "full_name",
+        "value": "John Smith",
+        "source": "csv",
+        "method": "CSVParser",
+        "normalization": null,
+        "trust": 0.675,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: best"
+        ]
+      },
+      {
+        "field": "current_company",
+        "value": "Amazon",
+        "source": "csv",
+        "method": "CSVParser+canonical",
+        "normalization": null,
+        "trust": 0.675,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: best"
+        ]
+      },
+      {
+        "field": "title",
+        "value": "Product Manager",
+        "source": "csv",
+        "method": "CSVParser",
+        "normalization": null,
+        "trust": 0.675,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: best"
+        ]
+      },
+      {
+        "field": "email",
+        "value": "john.smith@yahoo.com",
+        "source": "csv",
+        "method": "CSVParser+lowercase",
+        "normalization": "E.164/lowercase",
+        "trust": 0.675,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: concat"
+        ]
+      },
+      {
+        "field": "phone",
+        "value": "+918765432109",
+        "source": "csv",
+        "method": "CSVParser+E164",
+        "normalization": "E164",
+        "trust": 0.675,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: concat"
+        ]
+      }
+    ],
+    "overall_confidence": 0.675
+  },
+  {
+    "candidate_id": "46b3ee9c",
+    "full_name": "Amit Kumar",
+    "emails": [
+      "amit.kumar@outlook.com"
+    ],
+    "phones": [
+      "+919123456780"
+    ],
+    "location": {
+      "city": null,
+      "region": null,
+      "country": null
+    },
+    "links": {
+      "linkedin": null,
+      "github": null,
+      "portfolio": null,
+      "other": []
+    },
+    "headline": null,
+    "years_experience": null,
+    "skills": [],
+    "experience": [
+      {
+        "company": "Microsoft",
+        "title": "Data Scientist",
+        "start": null,
+        "end": null,
+        "summary": null
+      }
+    ],
+    "education": [],
+    "provenance": [
+      {
+        "field": "full_name",
+        "value": "Amit Kumar",
+        "source": "ats_json",
+        "method": "ATSParser",
+        "normalization": null,
+        "trust": 0.712,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: best"
+        ]
+      },
+      {
+        "field": "current_company",
+        "value": "Microsoft",
+        "source": "ats_json",
+        "method": "ATSParser+canonical",
+        "normalization": null,
+        "trust": 0.712,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: best"
+        ]
+      },
+      {
+        "field": "title",
+        "value": "Data Scientist",
+        "source": "ats_json",
+        "method": "ATSParser",
+        "normalization": null,
+        "trust": 0.712,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: best"
+        ]
+      },
+      {
+        "field": "email",
+        "value": "amit.kumar@outlook.com",
+        "source": "ats_json",
+        "method": "ATSParser+lowercase",
+        "normalization": "E.164/lowercase",
+        "trust": 0.712,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: concat"
+        ]
+      },
+      {
+        "field": "phone",
+        "value": "+919123456780",
+        "source": "ats_json",
+        "method": "ATSParser+E164",
+        "normalization": "E164",
+        "trust": 0.712,
+        "reasons": [
+          "Supported by a single source",
+          "Resolution strategy: concat"
+        ]
+      }
+    ],
+    "overall_confidence": 0.712
+  }
+]

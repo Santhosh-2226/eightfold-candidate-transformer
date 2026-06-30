@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/claude/candidate-transformer
+collecting ... collected 11 items
+
+tests/test_pipeline.py::test_merge_across_sources_dedupes_candidate PASSED [  9%]
+tests/test_pipeline.py::test_conflicting_company_names_resolve_after_canonicalization PASSED [ 18%]
+tests/test_pipeline.py::test_missing_source_does_not_crash PASSED        [ 27%]
+tests/test_pipeline.py::test_low_trust_single_source_value_is_withheld PASSED [ 36%]
+tests/test_pipeline.py::test_phone_normalization_to_e164 PASSED          [ 45%]
+tests/test_pipeline.py::test_email_normalization_lowercases_and_rejects_invalid PASSED [ 54%]
+tests/test_pipeline.py::test_country_normalization PASSED                [ 63%]
+tests/test_pipeline.py::test_skill_canonicalization PASSED               [ 72%]
+tests/test_pipeline.py::test_projection_required_field_missing_raises_on_error_policy PASSED [ 81%]
+tests/test_pipeline.py::test_projection_omit_policy_drops_missing_fields PASSED [ 90%]
+tests/test_pipeline.py::test_run_pipeline_produces_valid_default_schema_output PASSED [100%]
+
+============================== 11 passed in 0.46s ==============================

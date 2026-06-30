@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>TrustProfile — Candidate Transformer</title>
+<meta name="description" content="Multi-source candidate data fusion engine. Upload CSV, ATS JSON, Resume, Notes and GitHub to get a trusted golden record."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="orb orb1"></div><div class="orb orb2"></div><div class="orb orb3"></div>
+
+<header class="header">
+  <div class="wrap hflex">
+    <div class="logo">
+      <svg width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" stroke="url(#g1)" stroke-width="2" fill="none"/><path d="M10 16l4 4 8-8" stroke="url(#g2)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><defs><linearGradient id="g1" x1="0" y1="0" x2="32" y2="32"><stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient><linearGradient id="g2" x1="0" y1="0" x2="32" y2="32"><stop offset="0%" stop-color="#a78bfa"/><stop offset="100%" stop-color="#22d3ee"/></linearGradient></defs></svg>
+      <span class="logotxt">TrustProfile</span><span class="badge">AI</span>
+    </div>
+    <nav>
+      <a href="#upload" class="navlink">Upload</a>
+      <a href="#results" class="navlink">Results</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-tag"><span class="dot"></span>Multi-Source Data Fusion Engine</div>
+    <h1>Build <span class="grad">Trusted</span><br/>Golden Candidate Records</h1>
+    <p class="hero-sub">Upload data from CSV · ATS · Resume · Notes · GitHub. The pipeline parses, canonicalizes, trust-scores and resolves conflicts — producing one authoritative profile with full provenance.</p>
+    <div class="stats">
+      <div class="stat"><div class="snum">13</div><div class="slbl">Pipeline Stages</div></div>
+      <div class="sdiv"></div>
+      <div class="stat"><div class="snum">5</div><div class="slbl">Data Sources</div></div>
+      <div class="sdiv"></div>
+      <div class="stat"><div class="snum">0.40</div><div class="slbl">Trust Floor</div></div>
+      <div class="sdiv"></div>
+      <div class="stat"><div class="snum">100%</div><div class="slbl">Deterministic</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="pipeline-wrap">
+  <div class="wrap">
+    <div class="pipeline" id="pipeline">
+      <div class="ps" data-i="0">Parse</div><div class="pa">›</div>
+      <div class="ps" data-i="1">Map</div><div class="pa">›</div>
+      <div class="ps" data-i="2">Extract</div><div class="pa">›</div>
+      <div class="ps" data-i="3">Canonicalize</div><div class="pa">›</div>
+      <div class="ps" data-i="4">Normalize</div><div class="pa">›</div>
+      <div class="ps" data-i="5">Validate</div><div class="pa">›</div>
+      <div class="ps" data-i="6">Match</div><div class="pa">›</div>
+      <div class="ps" data-i="7">Trust Score</div><div class="pa">›</div>
+      <div class="ps" data-i="8">Resolve</div><div class="pa">›</div>
+      <div class="ps active" data-i="9">Golden Record ✓</div>
+    </div>
+  </div>
+</div>
+
+<section class="upload" id="upload">
+  <div class="wrap">
+    <div class="sec-hdr">
+      <h2>Upload Your Data Sources</h2>
+      <p>Provide at least one structured source (CSV or ATS JSON) and one unstructured source (Resume, Notes, or GitHub).</p>
+    </div>
+    <form id="form" novalidate>
+      <div class="grid4">
+
+        <div class="card" id="cCSV">
+          <div class="card-top">
+            <div class="cicon csv"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+            <div>
+              <h3>Recruiter CSV</h3>
+              <p class="cdesc">name, email, phone, company, title columns</p>
+            </div>
+          </div>
+          <div class="rel-row"><span>Reliability</span><div class="rbar"><div class="rfill" style="width:90%"></div></div><span>0.90</span></div>
+          <div class="dz" id="dz-csv" data-key="csv">
+            <input type="file" id="f-csv" name="csv" accept=".csv" hidden/>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
+            <p>Drop CSV or <label for="f-csv" class="lbl">browse</label></p>
+            <span class="hint">.csv</span>
+          </div>
+          <div class="chosen hidden" id="ch-csv"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span class="fname"></span><button type="button" class="clr" data-k="csv">✕</button></div>
+        </div>
+
+        <div class="card" id="cATS">
+          <div class="card-top">
+            <div class="cicon ats"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+            <div>
+              <h3>ATS JSON</h3>
+              <p class="cdesc">Applicant Tracking System structured export</p>
+            </div>
+          </div>
+          <div class="rel-row"><span>Reliability</span><div class="rbar"><div class="rfill" style="width:95%"></div></div><span>0.95</span></div>
+          <div class="dz" id="dz-ats_json" data-key="ats_json">
+            <input type="file" id="f-ats_json" name="ats_json" accept=".json" hidden/>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
+            <p>Drop JSON or <label for="f-ats_json" class="lbl">browse</label></p>
+            <span class="hint">.json</span>
+          </div>
+          <div class="chosen hidden" id="ch-ats_json"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span class="fname"></span><button type="button" class="clr" data-k="ats_json">✕</button></div>
+        </div>
+
+        <div class="card" id="cResume">
+          <div class="card-top">
+            <div class="cicon resume"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <div>
+              <h3>Resume</h3>
+              <p class="cdesc">Candidate resume .txt or .pdf (text layer)</p>
+            </div>
+          </div>
+          <div class="rel-row"><span>Reliability</span><div class="rbar"><div class="rfill" style="width:70%"></div></div><span>0.70</span></div>
+          <div class="dz" id="dz-resume" data-key="resume">
+            <input type="file" id="f-resume" name="resume" accept=".txt,.pdf" hidden/>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
+            <p>Drop resume or <label for="f-resume" class="lbl">browse</label></p>
+            <span class="hint">.txt or .pdf</span>
+          </div>
+          <div class="chosen hidden" id="ch-resume"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span class="fname"></span><button type="button" class="clr" data-k="resume">✕</button></div>
+        </div>
+
+        <div class="card" id="cNotes">
+          <div class="card-top">
+            <div class="cicon notes"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+            <div>
+              <h3>Recruiter Notes</h3>
+              <p class="cdesc">Free-text notes about the candidate</p>
+            </div>
+          </div>
+          <div class="rel-row"><span>Reliability</span><div class="rbar"><div class="rfill" style="width:50%"></div></div><span>0.50</span></div>
+          <div class="dz" id="dz-notes" data-key="notes">
+            <input type="file" id="f-notes" name="notes" accept=".txt" hidden/>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
+            <p>Drop notes or <label for="f-notes" class="lbl">browse</label></p>
+            <span class="hint">.txt</span>
+          </div>
+          <div class="chosen hidden" id="ch-notes"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span class="fname"></span><button type="button" class="clr" data-k="notes">✕</button></div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card github-card">
+          <div class="card-top">
+            <div class="cicon github"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg></div>
+            <div>
+              <h3>GitHub Profile <span class="opt-tag">Live API</span></h3>
+              <p class="cdesc">Fetches name, bio, email, top languages from the GitHub public API — no auth needed</p>
+            </div>
+          </div>
+          <div class="rel-row"><span>Reliability</span><div class="rbar"><div class="rfill" style="width:85%"></div></div><span>0.85</span></div>
+          <div class="gh-row">
+            <span class="gh-pfx">github.com/</span>
+            <input type="text" id="f-github" name="github" placeholder="username or full URL" class="gh-inp"/>
+          </div>
+          <p class="hint" style="margin-top:8px">Leave blank to skip. Example: <code>octocat</code></p>
+        </div>
+
+        <div class="card config-card">
+          <div class="card-top">
+            <div class="cicon cfg"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M5.34 18.66l-1.41 1.41M12 2v2M12 20v2M4.93 4.93l1.41 1.41M18.66 18.66l1.41 1.41M2 12h2M20 12h2"/></svg></div>
+            <div>
+              <h3>Projection Config <span class="opt-tag">Optional</span></h3>
+              <p class="cdesc">Custom JSON to subset/rename/normalize output fields. Skip for full default schema.</p>
+            </div>
+          </div>
+          <div class="dz" id="dz-config" data-key="config" style="margin-top:12px">
+            <input type="file" id="f-config" name="config" accept=".json" hidden/>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
+            <p>Config JSON or <label for="f-config" class="lbl">browse</label></p>
+          </div>
+          <div class="chosen hidden" id="ch-config"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span class="fname"></span><button type="button" class="clr" data-k="config">✕</button></div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn ghost" id="sampleBtn">⚡ Load Sample Data</button>
+        <button type="submit" class="btn primary" id="runBtn">
+          <span id="btnTxt"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run Pipeline</span>
+          <span id="btnLoad" class="hidden"><span class="spin"></span> Processing…</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section class="proc-section hidden" id="procSection">
+  <div class="wrap">
+    <div class="proc-card">
+      <div class="proc-ring-wrap"><div class="proc-ring"></div><div class="proc-inner-icon">⚡</div></div>
+      <h3>Running 13-Stage Pipeline</h3>
+      <div class="proc-steps" id="procSteps">
+        <div class="ps-row" id="ps-parse"><span class="ps-dot"></span><span>Parsing all sources</span></div>
+        <div class="ps-row" id="ps-map"><span class="ps-dot"></span><span>Schema mapping fields</span></div>
+        <div class="ps-row" id="ps-extract"><span class="ps-dot"></span><span>Extracting unstructured fields</span></div>
+        <div class="ps-row" id="ps-canon"><span class="ps-dot"></span><span>Canonicalizing values</span></div>
+        <div class="ps-row" id="ps-norm"><span class="ps-dot"></span><span>Normalizing formats (E.164, ISO dates)</span></div>
+        <div class="ps-row" id="ps-validate"><span class="ps-dot"></span><span>Validating claims</span></div>
+        <div class="ps-row" id="ps-match"><span class="ps-dot"></span><span>Entity matching &amp; clustering</span></div>
+        <div class="ps-row" id="ps-trust"><span class="ps-dot"></span><span>Computing trust scores</span></div>
+        <div class="ps-row" id="ps-resolve"><span class="ps-dot"></span><span>Resolving conflicts (Best / Concat)</span></div>
+        <div class="ps-row" id="ps-golden"><span class="ps-dot"></span><span>Building golden records</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="err-section hidden" id="errSection">
+  <div class="wrap">
+    <div class="err-card">
+      <div class="err-icon">⚠</div>
+      <div class="err-body">
+        <h3>Pipeline Error</h3>
+        <p id="errMsg" class="err-msg"></p>
+        <details id="errDetails"><summary>Stack trace</summary><pre id="errTrace"></pre></details>
+      </div>
+      <button class="btn ghost btn-sm" id="errDismiss">Dismiss</button>
+    </div>
+  </div>
+</section>
+
+<section class="results hidden" id="results">
+  <div class="wrap">
+    <div class="res-hdr">
+      <div>
+        <h2>Golden Records</h2>
+        <p class="res-meta" id="resMeta"></p>
+      </div>
+      <div class="res-acts">
+        <button class="btn ghost btn-sm" id="dlBtn">⬇ Download JSON</button>
+        <button class="btn ghost btn-sm" id="rawBtn">{ } Raw JSON</button>
+      </div>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <div class="cview" id="cview"></div>
+
+    <div class="modal hidden" id="modal">
+      <div class="mback" id="mback"></div>
+      <div class="minner">
+        <div class="mhdr"><h3>Raw JSON Output</h3><button id="mclose" class="mclose">✕</button></div>
+        <pre class="mjson" id="mjson"></pre>
+        <button class="btn ghost btn-sm" id="copyBtn">📋 Copy</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="wrap">
+    <span class="logotxt">TrustProfile</span>
+    <span class="ftag">Honestly-empty beats wrong-but-confident.</span>
+    <code class="ftrust">trust = reliability × (1 − conflict_penalty) × agreement_boost</code>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

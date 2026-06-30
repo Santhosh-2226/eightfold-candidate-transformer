@@ -1,0 +1,17 @@
+{
+  "_comment": "Runtime projection config — demonstrates field subsetting, renaming, and path expressions. Compare this output to the full default schema output to see the projection engine in action.",
+  "fields": [
+    { "path": "candidate",      "from": "full_name",             "type": "string",   "required": true },
+    { "path": "primary_email",  "from": "emails[0]",             "type": "string",   "required": true },
+    { "path": "phone",          "from": "phones[0]",             "type": "string",   "normalize": "E164" },
+    { "path": "skills",         "from": "skills[].name",         "type": "string[]", "normalize": "canonical" },
+    { "path": "current_role",   "from": "experience[0].title",   "type": "string" },
+    { "path": "company",        "from": "experience[0].company", "type": "string" },
+    { "path": "education",      "from": "education[0].institution", "type": "string" },
+    { "path": "degree",         "from": "education[0].degree",   "type": "string" },
+    { "path": "years_exp",      "from": "years_experience",      "type": "number" }
+  ],
+  "include_confidence": true,
+  "include_provenance": false,
+  "on_missing": "null"
+}

@@ -1,0 +1,32 @@
+Jane Doe
+jane.doe@gmail.com
++91 9876543210
+GitHub: https://github.com/janedoe | LinkedIn: linkedin.com/in/janedoe
+
+Summary
+Senior Software Engineer with 6 years of experience in distributed systems, machine learning, and cloud infrastructure.
+
+Skills
+Python, JavaScript, TypeScript, AWS, Docker, Kubernetes, Machine Learning, React, PostgreSQL, Redis, Git, FastAPI, TensorFlow, LangChain, Node.js
+
+Experience
+
+Google
+Senior Software Engineer | May 2019 - Present
+- Led distributed systems team building high-throughput data pipelines processing 1M+ events/day
+- Reduced latency by 40% through Kubernetes-based autoscaling and Redis caching
+- Mentored 3 junior engineers and drove adoption of Python-based ML tooling
+
+Some Prior Startup
+Software Engineer | Jan 2017 - Apr 2019
+- Built RESTful APIs using FastAPI and PostgreSQL serving 50K daily active users
+- Implemented CI/CD pipelines with Docker and GitHub Actions
+
+Education
+
+Stanford University
+B.Tech in Computer Science | 2013 - 2017
+CGPA: 3.9
+
+Certifications
+AWS Certified Solutions Architect

@@ -1,0 +1,14 @@
+[
+  {
+    "candidateName": "Jane Doe",
+    "contact": {"mail": "jane.doe@gmail.com", "mobile": "+919876543210"},
+    "employer": "Google",
+    "role": "Senior Software Engineer"
+  },
+  {
+    "candidateName": "Amit Kumar",
+    "contact": {"mail": "amit.kumar@outlook.com", "mobile": "9123456780"},
+    "employer": "Microsoft",
+    "role": "Data Scientist"
+  }
+]
