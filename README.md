@@ -13,7 +13,7 @@
 [![Status](https://img.shields.io/badge/Status-Deterministic%20%26%20Production--Oriented-1f8a4c)]()
 [![License](https://img.shields.io/badge/License-MIT-blue)]()
 
-📄 **[Read the full Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document.pdf)**
+📄 **[Read the full Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document (1).pdf)**
 
 </div>
 
