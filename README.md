@@ -1,3 +1,4 @@
+
 <div align="center">
 
 # 🧩 Multi-Source Candidate Data Transformer
@@ -13,7 +14,7 @@
 [![Status](https://img.shields.io/badge/Status-Deterministic%20%26%20Production--Oriented-1f8a4c)]()
 [![License](https://img.shields.io/badge/License-MIT-blue)]()
 
-📄 **[Read the full Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1)(1).pdf)**
+📄 **[Read the full Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1)%20(1).pdf)**
 
 </div>
 
@@ -27,6 +28,19 @@ This is not a resume parser. It's an **entity resolution and data fusion engine*
 
 > **Core design principle:** *"Wrong but confident is worse than honestly empty."*
 > Every field that can't be trusted above a defined threshold is returned as `null` — never guessed, never hallucinated.
+
+---
+
+## 🎬 Demo Video
+
+📹 **[Watch the full pipeline demo (5 min)](https://drive.google.com/file/d/19lwGax5QpIoimur4BWjAgcig9NPmvCrr/view?usp=sharing)**
+
+The demo walks through:
+- Complete project structure and all pipeline stages
+- Live upload of real resume PDF, ATS JSON, recruiter CSV, notes, and GitHub profile
+- Golden record output with trust scores and conflict resolution
+- Provenance audit trail for every field
+- Raw JSON download
 
 ---
 
@@ -70,7 +84,7 @@ Projection Layer  ──▶  Schema Validation
 Final Candidate JSON
 ```
 
-📐 The full architecture, trust-engine math, merge policy, and research basis are documented in detail in the **[Design Document](./docs/Candidate_Data_Transformer_Design_Document%20(1)(1).pdf)**.
+📐 The full architecture, trust-engine math, merge policy, and research basis are documented in the **[Design Document](./docs/Candidate_Data_Transformer_Design_Document%20(1)%20(1).pdf)**.
 
 ---
 
@@ -106,7 +120,7 @@ The design is **inspired by** (not a reproduction of) established truth-discover
 
 ## 🧬 Canonical Candidate Schema
 
-```text
+```
 candidate_id
 full_name
 emails[]
@@ -215,46 +229,46 @@ eightfold-candidate-transformer/
 │   ├── resume_parser.py
 │   ├── notes_parser.py
 │   ├── github_parser.py
-│   └── registry.py           # Parser Registry — routes sources to parsers
+│   └── registry.py
 │
 ├── mapper/
-│   └── schema_mapper.py      # Maps source fields → canonical schema
+│   └── schema_mapper.py
 │
 ├── extractor/
-│   ├── extractor.py          # Structured field extraction
-│   └── skills_vocab.py       # Skill canonicalization vocabulary
+│   ├── extractor.py
+│   └── skills_vocab.py
 │
 ├── canonicalizer/
-│   └── canonicalizer.py      # Company / skill synonym collapsing
+│   └── canonicalizer.py
 │
 ├── normalizer/
-│   └── normalizer.py         # Phone, date, country, email normalization
+│   └── normalizer.py
 │
 ├── matcher/
-│   └── matcher.py            # Entity resolution cascade
+│   └── matcher.py
 │
 ├── resolver/
-│   └── resolver.py           # Conflict resolution across sources
+│   └── resolver.py
 │
 ├── trust/
-│   └── trust.py              # Trust Engine — confidence scoring
+│   └── trust.py
 │
 ├── provenance/
-│   └── provenance.py         # Per-field provenance tracking
+│   └── provenance.py
 │
 ├── projection/
-│   └── projector.py          # Runtime-configurable output projection
+│   └── projector.py
 │
 ├── validator/
-│   ├── validator.py          # Input validation, fail-safe checks
-│   └── schema_validator.py   # Output schema validation
+│   ├── validator.py
+│   └── schema_validator.py
 │
 ├── schemas/
-│   └── canonical.py          # Canonical candidate schema (Pydantic models)
+│   └── canonical.py
 │
 ├── config/
-│   ├── settings.py           # Reliability weights, thresholds
-│   └── sample_config.json    # Example runtime projection config
+│   ├── settings.py
+│   └── sample_config.json
 │
 ├── sample_data/
 │   ├── recruiters.csv
@@ -266,7 +280,7 @@ eightfold-candidate-transformer/
 │   └── test_results.txt
 │
 ├── frontend/
-│   ├── index.html            # Minimal UI over the API
+│   ├── index.html
 │   ├── app.js
 │   └── style.css
 │
@@ -274,7 +288,7 @@ eightfold-candidate-transformer/
 │   └── test_pipeline.py
 │
 └── docs/
-    ├── Candidate_Data_Transformer_Design_Document (1).pdf
+    ├── Candidate_Data_Transformer_Design_Document (1) (1).pdf
     └── architecture_diagram.png
 ```
 
@@ -298,6 +312,8 @@ eightfold-candidate-transformer/
 - Canonical dictionaries (companies, skill synonyms) require periodic maintenance
 - Source reliability weights are configured manually, not learned
 
+---
+
 ## 🔭 Roadmap
 
 - [ ] Adaptive learning of source reliability from historical corrections
@@ -312,26 +328,9 @@ eightfold-candidate-transformer/
 
 | Resource | Description |
 |---|---|
-| 📘 [Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1)(1).pdf) | One-page abstract, full architecture, trust engine, merge policy, references |
+| 📘 [Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1)%20(1).pdf) | Full architecture, trust engine, merge policy, research references |
+| 🎬 [Demo Video](https://drive.google.com/file/d/19lwGax5QpIoimur4BWjAgcig9NPmvCrr/view?usp=sharing) | Full pipeline walkthrough — upload, merge, conflicts, provenance, JSON download |
 | 🖼️ [Architecture Diagram](./docs/architecture_diagram.png) | Visual pipeline reference |
-
-Just add this one section to your README, right after the quick start section:
-
-
-
-## 🎬 Demo Video
-
-📹 **[Watch the full pipeline demo (5 min)](https://drive.google.com/file/d/19lwGax5QpIoimur4BWjAgcig9NPmvCrr/view?usp=sharing)**
-
-The demo walks through:
-- Complete project structure and all pipeline stages
-- Live upload of real resume PDF, ATS JSON, recruiter CSV, notes, and GitHub profile
-- Golden record output with trust scores and conflict resolution
-- Provenance audit trail for every field
-- Raw JSON download
-
-
-
 
 ---
 
