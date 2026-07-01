@@ -13,7 +13,7 @@
 [![Status](https://img.shields.io/badge/Status-Deterministic%20%26%20Production--Oriented-1f8a4c)]()
 [![License](https://img.shields.io/badge/License-MIT-blue)]()
 
-📄 **[Read the full Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1).pdf)**
+📄 **[Read the full Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1)(1).pdf)**
 
 </div>
 
@@ -70,7 +70,7 @@ Projection Layer  ──▶  Schema Validation
 Final Candidate JSON
 ```
 
-📐 The full architecture, trust-engine math, merge policy, and research basis are documented in detail in the **[Design Document](./docs/Candidate_Data_Transformer_Design_Document%20(1).pdf)**.
+📐 The full architecture, trust-engine math, merge policy, and research basis are documented in detail in the **[Design Document](./docs/Candidate_Data_Transformer_Design_Document%20(1)(1).pdf)**.
 
 ---
 
@@ -312,7 +312,7 @@ eightfold-candidate-transformer/
 
 | Resource | Description |
 |---|---|
-| 📘 [Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1).pdf) | One-page abstract, full architecture, trust engine, merge policy, references |
+| 📘 [Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1)(1).pdf) | One-page abstract, full architecture, trust engine, merge policy, references |
 | 🖼️ [Architecture Diagram](./docs/architecture_diagram.png) | Visual pipeline reference |
 
 Just add this one section to your README, right after the quick start section:
