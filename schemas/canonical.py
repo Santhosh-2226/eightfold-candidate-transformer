@@ -54,7 +54,7 @@ class ProvenanceEntry(BaseModel):
     normalization_trace: Optional[str] = None   # e.g. "6374071150 → +916374071150"
     trust: Optional[float] = None
     reasons: List[str] = Field(default_factory=list)
-    confidence_breakdown: Optional[Dict[str, float]] = None  # {reliability, conflict_penalty, agreement_boost}
+    confidence_breakdown: Optional[Dict[str, Any]] = None  # {base_reliability, agreement_bonus, conflict_penalty, normalization_bonus, confirmed_sources, conflicting_sources, no_evidence_sources, final_confidence}
     competing_values: List[Dict[str, Any]] = Field(default_factory=list)  # all observed values with their scores
 
 

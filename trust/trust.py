@@ -1,143 +1,181 @@
 """
-Trust Engine.
+Trust Engine — Deterministic Additive Confidence Model.
 
-Implements the 3-factor trust formula adapted from data-fusion /
-truth-discovery literature (Michelfeit, Knap & Necasky, arXiv:1410.7990):
+Confidence formula:
 
-    trust(value) = source_reliability
-                 x (1 - conflict_penalty)
-                 x agreement_boost
+    confidence = base_source_reliability
+               + agreement_bonus
+               - conflict_penalty
+               + normalization_bonus
+    
+    clamped to [0.0, 1.0]
 
-  - source_reliability: per-source prior from config/settings.py, scaled by
-    the method that produced the claim (regex-anchored > keyword-scan).
-  - conflict_penalty: weighted average distance to other observed values for
-    the same field (0 when all sources agree, up to 1 when maximally split).
-  - agreement_boost: reflects corroboration.
-      * Multiple distinct source types: min(1.0, 0.60 + 0.20 × (n_sources - 1))
-      * Single source: min(0.85, 0.70 × method_multiplier)
-        — so a tightly-anchored regex method (1.10) scores 0.77 while a
-          loose heuristic (0.85) scores only 0.60, making every field
-          distinguishable even when they share the same source.
+Evidence is classified per capable source (from FIELD_COVERAGE):
 
-Returns all components so callers can expose the full breakdown in
-provenance and the UI.
+    CONFIRMED    — source provided the same normalized value
+    CONFLICT     — source provided a different normalized value
+    NO_EVIDENCE  — capable source provided no value for this field
+
+Key principle: Missing evidence is NOT treated as disagreement.
+Only explicit CONFLICT reduces confidence.
+
+This is mathematically cleaner and consistent with the Eightfold
+assignment requirement: "Wrong-but-confident is worse than honestly-empty."
 """
-import re
-from typing import List, Tuple
-from rapidfuzz import fuzz
-from config.settings import SOURCE_RELIABILITY, TRUST_FLOOR, METHOD_RELIABILITY_MULTIPLIER
+from typing import List, Tuple, Optional, Set
+from config.settings import (
+    SOURCE_RELIABILITY, TRUST_FLOOR, METHOD_RELIABILITY_MULTIPLIER, FIELD_COVERAGE
+)
 
 Claim = Tuple[str, object, str, str, str]  # field, value, source_type, source_name, method
 
-# Fields where multiple DISTINCT values legitimately co-exist.
+# Fields where multiple distinct values co-exist legitimately.
+# Conflicts are not meaningful for these — a different skill from the same source
+# is a union entry, not a dispute.
 MULTI_VALUE_FIELDS = {"skill", "email", "phone"}
 
-_EMAIL_VALID_RE = re.compile(r"^[\w.+-]+@[\w-]+\.[\w.-]+$")
-_PHONE_VALID_RE = re.compile(r"^\+\d{8,15}$")
 
-
-def _string_distance(a: str, b: str) -> float:
-    """0 = identical, 1 = completely different."""
-    if a == b:
-        return 0.0
-    score = fuzz.ratio(str(a).lower(), str(b).lower())
-    return 1.0 - (score / 100.0)
-
-
-def _numeric_distance(a: float, b: float, scale: float = 10.0) -> float:
-    try:
-        a, b = float(a), float(b)
-    except (TypeError, ValueError):
-        return 1.0
-    return min(1.0, abs(a - b) / scale)
-
-
-def _distance(field: str, a, b) -> float:
-    if field in ("years_experience",):
-        return _numeric_distance(a, b)
-    return _string_distance(str(a), str(b))
-
-
-def _method_multiplier(methods) -> float:
-    """Highest applicable multiplier across the methods that claimed this value."""
+def _method_multiplier(methods: list) -> float:
+    """Highest applicable method multiplier across the methods that produced this value."""
     mults = [METHOD_RELIABILITY_MULTIPLIER.get(m, 1.0) for m in methods]
     return max(mults) if mults else 1.0
 
 
-def score_claims_for_field(claims_for_field: List[Claim]) -> List[dict]:
+def score_claims_for_field(
+    claims_for_field: List[Claim],
+    active_sources: Optional[Set[str]] = None,
+) -> List[dict]:
     """
-    claims_for_field: all claims for ONE canonical field of ONE candidate.
+    Score all claims for ONE canonical field of ONE candidate.
 
-    Returns a list of dicts: {value, sources, source_names, methods, trust,
-    below_floor, reliability, conflict_penalty, agreement_boost}
+    Parameters
+    ----------
+    claims_for_field : list of 5- or 6-tuples
+        (field, value, source_type, source_name, method[, raw_value])
+    active_sources : set of source_type strings present in this candidate's cluster.
+        Used to correctly classify NO_EVIDENCE (a capable source that IS active
+        but simply didn't produce a value for this field).
+        If None, falls back to the sources that actually provided values.
 
-    Formula: trust = source_reliability × (1 - conflict_penalty) × agreement_boost
-    All three factors are exposed in the dict for provenance / UI breakdown.
+    Returns
+    -------
+    List of scored dicts, highest confidence first.
+    Each dict contains the full additive breakdown for provenance + UI.
     """
     if not claims_for_field:
         return []
 
-    # Group by distinct value (case-folded)
+    field_name = claims_for_field[0][0]
+
+    # ── Group claims by normalized value ─────────────────────────────────────
+    # Track raw_value (6th element) for normalization bonus detection.
+    # raw_value is non-None only when extractor actually transformed the value.
     groups: dict = {}
     for claim in claims_for_field:
         field, value, source_type, source_name, method = claim[:5]
+        raw_value = claim[5] if len(claim) > 5 else None
         key = str(value).strip().lower()
-        groups.setdefault(key, []).append((value, source_type, source_name, method))
+        groups.setdefault(key, []).append(
+            (value, source_type, source_name, method, raw_value)
+        )
 
-    field_name = claims_for_field[0][0]
+    # Source types that provided ANY value for this field
+    all_providing_sources: Set[str] = {
+        st for entries in groups.values() for (_, st, _, _, _) in entries
+    }
+
+    # Capable sources = those listed in FIELD_COVERAGE for this field
+    # Capable + active = those both listed AND present in this cluster
+    capable: Set[str] = set(FIELD_COVERAGE.get(field_name, []))
+    if active_sources is not None:
+        capable_active = capable & active_sources
+    else:
+        # Fallback: only consider sources that actually provided something
+        capable_active = capable & all_providing_sources
+
     results = []
 
     for key, entries in groups.items():
-        # ── Factor 1: source reliability × method multiplier ──────────────────
-        base_reliabilities = [SOURCE_RELIABILITY.get(st, 0.5) for (_, st, _, _) in entries]
-        methods_for_value = [m for (_, _, _, m) in entries]
+        # ── Evidence classification ───────────────────────────────────────────
+        # CONFIRMED: source types that provided this exact value
+        confirmed_st: Set[str] = {st for (_, st, _, _, _) in entries}
+
+        # CONFLICT: capable active sources that provided a DIFFERENT value.
+        # Not applicable for multi-value fields (skills are a union, not a dispute).
+        if field_name not in MULTI_VALUE_FIELDS:
+            conflicting_st: Set[str] = all_providing_sources - confirmed_st
+        else:
+            conflicting_st = set()
+
+        # NO_EVIDENCE: capable active sources that provided nothing at all
+        no_evidence_st: Set[str] = capable_active - confirmed_st - conflicting_st
+
+        confirmed_count = len(confirmed_st)
+        conflict_count  = len(conflicting_st)
+
+        # ── base_source_reliability ───────────────────────────────────────────
+        # Highest reliability among sources that confirmed this value,
+        # scaled by the best extraction method used.
+        base_reliabilities = [SOURCE_RELIABILITY.get(st, 0.5) for (_, st, _, _, _) in entries]
+        methods_for_value  = [m for (_, _, _, m, _) in entries]
         method_mult = _method_multiplier(methods_for_value)
-        source_reliability = min(1.0, max(base_reliabilities) * method_mult)
+        base_reliability = min(1.0, max(base_reliabilities) * method_mult)
 
-        # ── Factor 2: conflict penalty ─────────────────────────────────────────
-        other_groups = [g for k, g in groups.items() if k != key]
-        if other_groups and field_name not in MULTI_VALUE_FIELDS:
-            weighted_distances = []
-            for other_entries in other_groups:
-                other_value = other_entries[0][0]
-                other_reliability = max(
-                    SOURCE_RELIABILITY.get(st, 0.5) for (_, st, _, _) in other_entries
-                )
-                d = _distance(field_name, entries[0][0], other_value)
-                weighted_distances.append(d * other_reliability)
-            conflict_penalty = min(1.0, sum(weighted_distances) / len(weighted_distances))
+        # ── agreement_bonus ───────────────────────────────────────────────────
+        # Counts CONFIRMED sources only. NO_EVIDENCE is neutral — it does NOT
+        # reduce this bonus. A single source with no conflict still earns +0.05.
+        if confirmed_count >= 2:
+            agreement_bonus = 0.15    # multiple independent sources agree
+        elif confirmed_count == 1:
+            agreement_bonus = 0.05    # single source, but no conflict
         else:
+            agreement_bonus = 0.0
+
+        # ── conflict_penalty ──────────────────────────────────────────────────
+        # Only EXPLICIT conflicts reduce confidence.
+        # NO_EVIDENCE is completely neutral — missing a field is not a dispute.
+        if conflict_count == 0:
             conflict_penalty = 0.0
-
-        # ── Factor 3: agreement boost ──────────────────────────────────────────
-        distinct_sources = len({st for (_, st, _, _) in entries})
-        if distinct_sources > 1:
-            # Multi-source: each additional agreeing source adds weight
-            agreement_boost = min(1.0, 0.60 + 0.20 * (distinct_sources - 1))
+        elif conflict_count == 1:
+            conflict_penalty = 0.20
+        elif conflict_count == 2:
+            conflict_penalty = 0.35
         else:
-            # Single source: scale by extraction method quality so that
-            # tightly-anchored regex (1.10) differs from a loose heuristic (0.85)
-            agreement_boost = min(0.85, 0.70 * method_mult)
+            conflict_penalty = 0.50
 
-        # ── Final trust ────────────────────────────────────────────────────────
-        trust = (
-            source_reliability
-            * (1 - conflict_penalty)
-            * agreement_boost
+        # ── normalization_bonus ───────────────────────────────────────────────
+        # +0.05 when canonical normalization actually transformed the value
+        # (e.g. E.164 phone, lowercase email, canonical company/skill name).
+        # raw_value is non-None only when transformation occurred (set by extractor).
+        norm_happened = any(rv is not None for (_, _, _, _, rv) in entries)
+        normalization_bonus = 0.05 if norm_happened else 0.0
+
+        # ── Final confidence (additive, clamped to [0, 1]) ────────────────────
+        confidence = (
+            base_reliability
+            + agreement_bonus
+            - conflict_penalty
+            + normalization_bonus
         )
-        trust = round(max(0.0, min(1.0, trust)), 3)
+        confidence = round(max(0.0, min(1.0, confidence)), 3)
 
         results.append({
-            "value":            entries[0][0],
-            "sources":          sorted({st for (_, st, _, _) in entries}),
-            "source_names":     [sn for (_, _, sn, _) in entries],
-            "methods":          sorted({m for (_, _, _, m) in entries}),
-            "trust":            trust,
-            "below_floor":      trust < TRUST_FLOOR,
-            # Full formula breakdown — exposed for provenance + UI
-            "reliability":      round(source_reliability, 3),
-            "conflict_penalty": round(conflict_penalty, 3),
-            "agreement_boost":  round(agreement_boost, 3),
+            # Core output
+            "value":               entries[0][0],
+            "sources":             sorted(confirmed_st),
+            "source_names":        [sn for (_, _, sn, _, _) in entries],
+            "methods":             sorted({m for (_, _, _, m, _) in entries}),
+            "trust":               confidence,
+            "below_floor":         confidence < TRUST_FLOOR,
+            # Full additive breakdown — exposed for provenance + UI
+            "base_reliability":    round(base_reliability, 3),
+            "agreement_bonus":     round(agreement_bonus, 3),
+            "conflict_penalty":    round(conflict_penalty, 3),
+            "normalization_bonus": round(normalization_bonus, 3),
+            # Evidence classification
+            "confirmed_sources":   sorted(confirmed_st),
+            "conflicting_sources": sorted(conflicting_st),
+            "no_evidence_sources": sorted(no_evidence_st),
         })
 
     return sorted(results, key=lambda r: r["trust"], reverse=True)

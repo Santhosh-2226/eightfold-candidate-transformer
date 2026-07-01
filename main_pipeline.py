@@ -6,25 +6,25 @@ This module contains the engine; main.py (CLI) just wires inputs/config
 to this function and prints the result.
 
 Key design points:
-  - Handles 6-tuple claims (field, value, source_type, source_name, method, raw_value)
-  - Assembles Experience[] from resume experience_entry claims (with dates + summary)
-  - Assembles Education[] from resume education_entry claims
-  - Falls back to current_company/title for experience if no parsed entries exist
-  - Assembles links.github, links.portfolio, links.linkedin from all sources
-  - Parses location_raw into location.city / location.country
-  - Uses OVERALL_CONFIDENCE_WEIGHTS from settings for weighted overall confidence
-  - score_claims_for_field called ONCE per field (not twice)
+  - 6-tuple claims: (field, value, source_type, source_name, method, raw_value)
+  - active_sources computed per cluster and passed to score_claims_for_field
+    so the trust engine can correctly classify NO_EVIDENCE vs CONFLICT
+  - Experience[], Education[] assembled from resume_entry claims
+  - links.github, links.portfolio, links.linkedin assembled from all sources
+  - location_raw parsed into location.city / location.country
+  - Overall confidence: weighted average over POPULATED fields only;
+    null fields never reduce the score
 """
 import warnings
 import uuid
 from collections import defaultdict
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 
 from parsers.registry import run_parser
 from mapper.schema_mapper import map_record
 from extractor.extractor import process_claims
 from matcher.matcher import cluster_records
-from resolver.resolver import resolve_field, FIELD_STRATEGY
+from resolver.resolver import FIELD_STRATEGY, _filter_claims
 from trust.trust import score_claims_for_field
 from provenance.provenance import build_provenance
 from projection.projector import project
@@ -32,7 +32,7 @@ from schemas.canonical import (
     CanonicalCandidate, Skill, ProvenanceEntry, Experience, Education, Location
 )
 from canonicalizer.canonicalizer import canonicalize_company
-from config.settings import SOURCE_RELIABILITY, OVERALL_CONFIDENCE_WEIGHTS
+from config.settings import SOURCE_RELIABILITY, OVERALL_CONFIDENCE_WEIGHTS, TRUST_FLOOR
 from normalizer.normalizer import normalize_country
 
 
@@ -63,8 +63,6 @@ def build_golden_records(sources: Dict[str, str]) -> List[CanonicalCandidate]:
         for idx in cluster:
             cluster_claims.extend(per_record_claims[idx])
         if not cluster_claims:
-            # A source file parsed to zero usable claims — skip rather than
-            # emitting a record with no evidence.
             warnings.warn(
                 f"Empty cluster (indices {cluster}) — source produced no valid claims; "
                 "record skipped.  Check that the source file has parseable content.",
@@ -78,8 +76,32 @@ def build_golden_records(sources: Dict[str, str]) -> List[CanonicalCandidate]:
 
 
 def _raw_value(claim) -> Optional[str]:
-    """Extract the raw_value (6th element) from a claim tuple, or None."""
+    """Extract raw_value (6th element of tuple) if present, else None."""
     return claim[5] if len(claim) > 5 else None
+
+
+def _score_once(
+    field: str,
+    field_claims: list,
+    active_sources: Set[str],
+    apply_filter: bool = False,
+) -> List[dict]:
+    """
+    Score a field's claims exactly once, passing active_sources so the trust
+    engine can distinguish NO_EVIDENCE from CONFLICT.
+    Optionally apply _filter_claims (used for current_company to drop
+    educational institution values).
+    """
+    claims = _filter_claims(field, field_claims) if apply_filter else field_claims
+    return score_claims_for_field(claims, active_sources=active_sources)
+
+
+def _pick_best(scored: List[dict]) -> Optional[dict]:
+    """Return the highest-trust scored value that clears TRUST_FLOOR, or None."""
+    if not scored:
+        return None
+    top = scored[0]
+    return None if top["trust"] < TRUST_FLOOR else top
 
 
 def _build_one_record(claims) -> CanonicalCandidate:
@@ -89,22 +111,27 @@ def _build_one_record(claims) -> CanonicalCandidate:
 
     candidate = CanonicalCandidate(candidate_id=str(uuid.uuid4())[:8])
 
-    # field_trusts: {canonical_field_name -> trust_score} for weighted confidence
+    # active_sources: every source type present in this candidate's cluster.
+    # Passed to score_claims_for_field so it can classify NO_EVIDENCE correctly
+    # (a capable source that IS active but didn't provide a value for this field).
+    active_sources: Set[str] = {claim[2] for claim in claims}
+
+    # field_trusts: {field_name -> confidence} for weighted overall confidence
     field_trusts: Dict[str, float] = {}
 
     # ── Scalar "best" fields ──────────────────────────────────────────────────
     for field in ("full_name", "current_company", "title", "headline", "years_experience"):
+        apply_filter = (field == "current_company")
         field_claims = by_field.get(field, [])
-        # Score ONCE, pass to both resolve and provenance (Issue 6.1)
-        scored = score_claims_for_field(field_claims)
-        resolved = _pick_best(scored, field, field_claims)
+        scored = _score_once(field, field_claims, active_sources, apply_filter=apply_filter)
+        resolved = _pick_best(scored)
         if resolved:
-            was_conflict = len(set(str(c[1]) for c in field_claims)) > 1
+            was_conflict = bool(resolved.get("conflicting_sources"))
             raw = next((_raw_value(c) for c in field_claims if _raw_value(c)), None)
             prov = build_provenance(
                 field, resolved, FIELD_STRATEGY.get(field, "best"),
-                normalization=None, was_conflict=was_conflict, raw_value=raw,
-                competing_values=scored,
+                normalization=None, was_conflict=was_conflict,
+                raw_value=raw, competing_values=scored,
             )
             candidate.provenance.append(prov)
             field_trusts[field] = resolved["trust"]
@@ -116,34 +143,33 @@ def _build_one_record(claims) -> CanonicalCandidate:
             elif field == "headline":
                 candidate.headline = resolved["value"]
 
-    # ── List fields: emails, phones ──────────────────────────────────────────
+    # ── List fields: emails, phones ───────────────────────────────────────────
     for field, target_attr, norm_label in (
         ("email", "emails", "lowercase"),
         ("phone", "phones", "E164"),
     ):
         field_claims = by_field.get(field, [])
-        scored = score_claims_for_field(field_claims)
+        scored = _score_once(field, field_claims, active_sources)
         resolved_list = [r for r in scored if not r["below_floor"]]
         values = []
         for r in resolved_list:
-            was_conflict = len(resolved_list) > 1
+            was_conflict = bool(r.get("conflicting_sources"))
             raw = next((_raw_value(c) for c in field_claims
                         if str(c[1]) == str(r["value"]) and _raw_value(c)), None)
             prov = build_provenance(
                 field, r, "concat",
-                normalization=norm_label, was_conflict=was_conflict, raw_value=raw,
-                competing_values=scored,
+                normalization=norm_label, was_conflict=was_conflict,
+                raw_value=raw, competing_values=scored,
             )
             candidate.provenance.append(prov)
             values.append(r["value"])
         setattr(candidate, target_attr, values)
         if values:
-            # Use max trust of the list for weight purposes
             field_trusts[field] = max(r["trust"] for r in resolved_list)
 
-    # ── Skills ───────────────────────────────────────────────────────────────
+    # ── Skills ────────────────────────────────────────────────────────────────
     skill_claims = by_field.get("skill", [])
-    scored_skills = score_claims_for_field(skill_claims)
+    scored_skills = _score_once("skill", skill_claims, active_sources)
     resolved_skills = [r for r in scored_skills if not r["below_floor"]]
     for r in resolved_skills:
         candidate.skills.append(Skill(
@@ -151,43 +177,48 @@ def _build_one_record(claims) -> CanonicalCandidate:
         ))
         candidate.provenance.append(build_provenance(
             "skill", r, "concat",
-            normalization="canonical", was_conflict=False,
+            normalization="canonical", was_conflict=bool(r.get("conflicting_sources")),
             competing_values=scored_skills,
         ))
     if resolved_skills:
-        field_trusts["skill"] = sum(r["trust"] for r in resolved_skills) / len(resolved_skills)
+        avg_skill_trust = sum(r["trust"] for r in resolved_skills) / len(resolved_skills)
+        field_trusts["skill"] = round(avg_skill_trust, 3)
 
-    # ── Links: github_url, portfolio, linkedin_url ──────────────────────────
-    for field, link_attr in (
+    # ── Links: github_url, portfolio, linkedin_url ────────────────────────────
+    links_trusts = []
+    for link_field, link_attr in (
         ("github_url",   "github"),
         ("portfolio",    "portfolio"),
         ("linkedin_url", "linkedin"),
     ):
-        field_claims = by_field.get(field, [])
+        field_claims = by_field.get(link_field, [])
         if field_claims:
-            scored = score_claims_for_field(field_claims)
-            best = next((r for r in scored if not r["below_floor"]), None)
+            scored = _score_once(link_field, field_claims, active_sources)
+            best = _pick_best(scored)
             if best:
                 setattr(candidate.links, link_attr, best["value"])
+                links_trusts.append(best["trust"])
                 candidate.provenance.append(build_provenance(
-                    field, best, "best",
-                    normalization=None, was_conflict=len(scored) > 1,
+                    link_field, best, "best",
+                    normalization=None, was_conflict=bool(best.get("conflicting_sources")),
                     competing_values=scored,
                 ))
+    if links_trusts:
+        field_trusts["links"] = round(sum(links_trusts) / len(links_trusts), 3)
 
-    # ── affiliation_raw (GitHub self-reported affiliation) ───────────────────
+    # ── affiliation_raw (GitHub self-reported affiliation) ────────────────────
     aff_claims = by_field.get("affiliation_raw", [])
     if aff_claims:
-        scored = score_claims_for_field(aff_claims)
-        best = next((r for r in scored if not r["below_floor"]), None)
+        scored = _score_once("affiliation_raw", aff_claims, active_sources)
+        best = _pick_best(scored)
         if best:
             candidate.affiliation_raw = str(best["value"]).lstrip("@").strip() or None
 
-    # ── Location: parse location_raw from GitHub or other sources ────────────
+    # ── Location: parse location_raw ─────────────────────────────────────────
     loc_claims = by_field.get("location_raw", [])
     if loc_claims:
-        scored = score_claims_for_field(loc_claims)
-        best = next((r for r in scored if not r["below_floor"]), None)
+        scored = _score_once("location_raw", loc_claims, active_sources)
+        best = _pick_best(scored)
         if best:
             raw_loc = str(best["value"]).strip()
             parts = [p.strip() for p in raw_loc.split(",") if p.strip()]
@@ -196,20 +227,22 @@ def _build_one_record(claims) -> CanonicalCandidate:
             country_code = normalize_country(country_raw) if country_raw else None
             candidate.location = Location(
                 city=city,
-                country=country_code or (country_raw if country_raw and len(parts) >= 2 else None),
+                country=country_code or (country_raw if len(parts) >= 2 else None),
             )
+            if city or country_code:
+                field_trusts["location"] = round(best["trust"], 3)
 
     # ── Experience: parsed entries from resume ────────────────────────────────
     exp_entries_built = False
     for claim in by_field.get("experience_entry", []):
-        entry = claim[1]  # dict with company/title/start/end/summary
+        entry = claim[1]
         if not isinstance(entry, dict):
             continue
         company = entry.get("company")
         if company:
             company = canonicalize_company(company)
 
-        # Compute trust from settings rather than hardcoding
+        # Trust computed from settings, not hardcoded
         exp_trust = round(SOURCE_RELIABILITY.get("resume", 0.70) * 0.75, 3)
 
         exp = Experience(
@@ -218,7 +251,7 @@ def _build_one_record(claims) -> CanonicalCandidate:
             employment_type=entry.get("employment_type"),
             start=entry.get("start"),
             end=entry.get("end"),
-            summary=entry.get("summary") or [],   # never None
+            summary=entry.get("summary") or [],
             extraction_quality=entry.get("extraction_quality"),
         )
         candidate.experience.append(exp)
@@ -232,18 +265,24 @@ def _build_one_record(claims) -> CanonicalCandidate:
             normalization=None,
             trust=exp_trust,
             reasons=[
-                f"Parsed from resume: {entry.get('start', '')} \u2013 {entry.get('end', '')}",
+                f"Parsed from resume: {entry.get('start', '')} - {entry.get('end', '')}",
+                "Single-source value retained because no conflicting information exists.",
                 "Resolution strategy: concat",
             ],
             confidence_breakdown={
-                "reliability":      SOURCE_RELIABILITY.get("resume", 0.70),
-                "conflict_penalty": 0.0,
-                "agreement_boost":  0.75,
+                "base_reliability":    SOURCE_RELIABILITY.get("resume", 0.70),
+                "agreement_bonus":     0.05,
+                "conflict_penalty":    0.0,
+                "normalization_bonus": 0.0,
+                "confirmed_sources":   ["resume"],
+                "conflicting_sources": [],
+                "no_evidence_sources": [],
+                "final_confidence":    exp_trust,
             },
         ))
         field_trusts.setdefault("experience", exp_trust)
 
-    # Fallback: if no parsed experience entries, use current_company/title from ATS/CSV
+    # Fallback: use current_company/title from ATS/CSV when no resume entries
     if not exp_entries_built:
         company_prov = next((p for p in candidate.provenance if p.field == "current_company"), None)
         title_prov   = next((p for p in candidate.provenance if p.field == "title"), None)
@@ -278,77 +317,56 @@ def _build_one_record(claims) -> CanonicalCandidate:
             normalization=None,
             trust=edu_trust,
             reasons=[
-                f"Parsed from resume — field: {entry.get('field', 'N/A')}, year: {entry.get('end_year', 'N/A')}",
+                f"Parsed from resume - field: {entry.get('field', 'N/A')}, "
+                f"year: {entry.get('end_year', 'N/A')}",
+                "Single-source value retained because no conflicting information exists.",
                 "Resolution strategy: concat",
             ],
             confidence_breakdown={
-                "reliability":      SOURCE_RELIABILITY.get("resume", 0.70),
-                "conflict_penalty": 0.0,
-                "agreement_boost":  0.75,
+                "base_reliability":    SOURCE_RELIABILITY.get("resume", 0.70),
+                "agreement_bonus":     0.05,
+                "conflict_penalty":    0.0,
+                "normalization_bonus": 0.0,
+                "confirmed_sources":   ["resume"],
+                "conflicting_sources": [],
+                "no_evidence_sources": [],
+                "final_confidence":    edu_trust,
             },
         ))
         field_trusts.setdefault("education", edu_trust)
 
-    # ── Overall confidence (weighted by field importance) ─────────────────────
-    # Uses OVERALL_CONFIDENCE_WEIGHTS from settings.py. Fields not listed
-    # in the weight map contribute their share of the remaining weight equally.
-    # The worst-field penalty is blended in as a 30% floor modifier so one
-    # low-confidence field drags the overall down without dominating it.
+    # ── Overall confidence ────────────────────────────────────────────────────
     candidate.overall_confidence = _compute_overall_confidence(field_trusts)
 
     return candidate
 
 
-def _pick_best(scored: List[dict], field: str, field_claims: list) -> Optional[dict]:
-    """
-    Thin wrapper: applies the resolver's field filter then picks the best
-    scored result. Avoids calling score_claims_for_field a second time.
-    """
-    from resolver.resolver import _filter_claims, TRUST_FLOOR
-    filtered_claims = _filter_claims(field, field_claims)
-    # Re-score on filtered subset only if filtering actually removed anything
-    if len(filtered_claims) != len(field_claims):
-        scored = score_claims_for_field(filtered_claims)
-    if not scored:
-        return None
-    top = scored[0]
-    return None if top["trust"] < TRUST_FLOOR else top
-
-
 def _compute_overall_confidence(field_trusts: Dict[str, float]) -> float:
     """
-    Weighted average of per-field trust scores using OVERALL_CONFIDENCE_WEIGHTS.
-    Fields present but not in the weight map share the residual weight equally.
-    Blended with a 30% worst-field penalty to prevent high-average profiles
-    from masking one unreliable field.
+    Weighted average of per-field confidence scores using OVERALL_CONFIDENCE_WEIGHTS.
+
+    Only POPULATED fields contribute — null fields never reduce the overall score.
+    Weights of unpopulated fields are redistributed to zero (not to other fields),
+    so the denominator is only the total weight of what we actually know.
+
+    Fields not listed in OVERALL_CONFIDENCE_WEIGHTS get a small residual weight
+    (0.02) so they still contribute marginally without dominating the score.
     """
     if not field_trusts:
         return 0.0
 
     total_weight = 0.0
     weighted_sum = 0.0
-    unweighted_fields = []
 
-    for f, trust in field_trusts.items():
-        w = OVERALL_CONFIDENCE_WEIGHTS.get(f)
-        if w is not None:
-            weighted_sum += w * trust
-            total_weight += w
-        else:
-            unweighted_fields.append(trust)
+    for field, trust in field_trusts.items():
+        w = OVERALL_CONFIDENCE_WEIGHTS.get(field, 0.02)
+        weighted_sum += w * trust
+        total_weight += w
 
-    # Distribute remaining weight equally among unweighted fields
-    residual = max(0.0, 1.0 - total_weight)
-    if unweighted_fields:
-        per_field_w = residual / len(unweighted_fields)
-        for trust in unweighted_fields:
-            weighted_sum += per_field_w * trust
-            total_weight += per_field_w
+    if total_weight == 0.0:
+        return 0.0
 
-    avg = weighted_sum / total_weight if total_weight > 0 else 0.0
-    worst = min(field_trusts.values())
-    # 70% weighted average + 30% worst-field penalty
-    return round(0.70 * avg + 0.30 * worst, 3)
+    return round(weighted_sum / total_weight, 3)
 
 
 def run_pipeline(sources: Dict[str, str], config: Optional[Dict[str, Any]] = None):

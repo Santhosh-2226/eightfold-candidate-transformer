@@ -1,38 +1,83 @@
 """
 Provenance Generator.
-Turns a resolved field result into a structured ProvenanceEntry,
-explaining what was selected, from where, by what method, with what
-trust, and why.
+Turns a scored field result into a structured ProvenanceEntry with
+full explainability: what value, from where, how extracted, with what
+confidence, and why that confidence was assigned.
 
-Stores:
-  - normalization_trace: e.g. "6374071150 -> +916374071150"
-  - confidence_breakdown: {reliability, conflict_penalty, agreement_boost}
+confidence_breakdown contains:
+  base_reliability    — source reliability x method quality
+  agreement_bonus     — +0.15 (2+ sources agree) / +0.05 (1 source) / +0.00
+  conflict_penalty    — 0.0 / 0.20 / 0.35 / 0.50 depending on conflict count
+  normalization_bonus — +0.05 when normalization actually transformed the value
+  confirmed_sources   — source types that provided this value
+  conflicting_sources — capable sources that provided a different value
+  no_evidence_sources — capable active sources that provided nothing
+  final_confidence    — the clamped sum
 """
 from typing import Optional
 from schemas.canonical import ProvenanceEntry
 
+# Human-friendly labels for normalization types
+_NORM_LABELS = {
+    "E164":       "Normalized phone number to E.164 international format.",
+    "lowercase":  "Normalized email address to lowercase.",
+    "canonical":  "Canonicalized to standard form.",
+}
 
-def build_reasons(resolved: dict, strategy: str, was_conflict: bool) -> list:
+
+def build_reasons(
+    resolved: dict,
+    strategy: str,
+    was_conflict: bool,
+    normalization: Optional[str] = None,
+    norm_trace: Optional[str] = None,
+) -> list:
+    """Generate a list of human-readable explanation strings for this confidence score."""
     reasons = []
 
-    # Use the number of sources that AGREED on the winning value,
-    # not the total number of sources that offered any value for this field.
-    # (A field with 3 sources but only 1 agreeing still gets "single source".)
-    n_agreeing = len(resolved.get("sources", []))
-    if n_agreeing > 1:
-        reasons.append(f"Confirmed by {n_agreeing} independent sources")
+    confirmed   = resolved.get("confirmed_sources", [])
+    conflicting = resolved.get("conflicting_sources", [])
+
+    # ── Confirmation / single-source explanation ──────────────────────────────
+    if len(confirmed) >= 2:
+        sources_str = " and ".join(confirmed)
+        reasons.append(f"Confirmed by {sources_str}.")
     else:
-        reasons.append("Supported by a single source")
+        # Single source but no conflict — confidence is retained, not penalised
+        reasons.append(
+            "Single-source value retained because no conflicting information exists."
+        )
 
-    if was_conflict:
-        reasons.append("Selected over conflicting value(s) from other sources")
+    # ── Conflict explanation ──────────────────────────────────────────────────
+    if conflicting:
+        n = len(conflicting)
+        src_str = ", ".join(conflicting)
+        reasons.append(
+            f"{'One conflicting' if n == 1 else str(n) + ' conflicting'} "
+            f"value{'s' if n > 1 else ''} detected from {src_str}."
+        )
+    else:
+        reasons.append("No conflicting evidence found.")
 
-    # Formula breakdown as a readable reason (3-factor only)
-    r  = resolved.get("reliability", 0)
-    cp = resolved.get("conflict_penalty", 0)
-    ab = resolved.get("agreement_boost", 0)
+    # ── Normalization explanation ─────────────────────────────────────────────
+    norm_bonus = resolved.get("normalization_bonus", 0)
+    if norm_bonus > 0:
+        if normalization and normalization in _NORM_LABELS:
+            reasons.append(_NORM_LABELS[normalization])
+        elif norm_trace:
+            reasons.append(f"Normalized: {norm_trace}.")
+        else:
+            reasons.append("Value was normalized to canonical form.")
+
+    # ── Formula breakdown ─────────────────────────────────────────────────────
+    br  = resolved.get("base_reliability", 0)
+    ab  = resolved.get("agreement_bonus", 0)
+    cp  = resolved.get("conflict_penalty", 0)
+    nb  = resolved.get("normalization_bonus", 0)
+    conf = resolved.get("trust", 0)
     reasons.append(
-        f"Trust = {r:.2f} (reliability) x (1 - {cp:.2f}) (conflict) x {ab:.2f} (agreement)"
+        f"Confidence = {br:.2f} (base) + {ab:.2f} (agreement) "
+        f"- {cp:.2f} (conflict) + {nb:.2f} (normalisation) = {conf:.3f}"
     )
     reasons.append(f"Resolution strategy: {strategy}")
     return reasons
@@ -44,34 +89,43 @@ def build_provenance(
     strategy: str,
     normalization: Optional[str],
     was_conflict: bool,
-    raw_value: Optional[str] = None,       # original value before normalization
-    competing_values: Optional[list] = None, # all competing values evaluated
+    raw_value: Optional[str] = None,
+    competing_values: Optional[list] = None,
 ) -> ProvenanceEntry:
-    # Build normalization trace only when an actual transformation occurred
+    # Normalization trace — only when an actual transformation occurred
     norm_trace = None
     if raw_value is not None and str(raw_value) != str(resolved["value"]):
         norm_trace = f"{raw_value} -> {resolved['value']}"
 
-    # Confidence breakdown — 3-factor only (no stale validation_score / completeness_score)
+    # Full additive confidence breakdown
     breakdown = None
-    if "reliability" in resolved:
+    if "base_reliability" in resolved:
         breakdown = {
-            "reliability":      resolved["reliability"],
-            "conflict_penalty": resolved["conflict_penalty"],
-            "agreement_boost":  resolved["agreement_boost"],
+            "base_reliability":    resolved["base_reliability"],
+            "agreement_bonus":     resolved["agreement_bonus"],
+            "conflict_penalty":    resolved["conflict_penalty"],
+            "normalization_bonus": resolved["normalization_bonus"],
+            "confirmed_sources":   resolved.get("confirmed_sources", []),
+            "conflicting_sources": resolved.get("conflicting_sources", []),
+            "no_evidence_sources": resolved.get("no_evidence_sources", []),
+            "final_confidence":    resolved["trust"],
         }
 
+    # Competing values for the Conflict Dashboard
     comp_entries = []
     if competing_values:
         for cv in competing_values:
             comp_entries.append({
-                "value":            cv["value"],
-                "sources":          cv["sources"],
-                "trust":            cv["trust"],
-                "selected":         str(cv["value"]) == str(resolved["value"]),
-                "reliability":      cv.get("reliability"),
-                "conflict_penalty": cv.get("conflict_penalty"),
-                "agreement_boost":  cv.get("agreement_boost"),
+                "value":               cv["value"],
+                "sources":             cv["sources"],
+                "trust":               cv["trust"],
+                "selected":            str(cv["value"]) == str(resolved["value"]),
+                "base_reliability":    cv.get("base_reliability"),
+                "agreement_bonus":     cv.get("agreement_bonus"),
+                "conflict_penalty":    cv.get("conflict_penalty"),
+                "normalization_bonus": cv.get("normalization_bonus"),
+                "confirmed_sources":   cv.get("confirmed_sources", []),
+                "conflicting_sources": cv.get("conflicting_sources", []),
             })
 
     return ProvenanceEntry(
@@ -82,7 +136,10 @@ def build_provenance(
         normalization=normalization if norm_trace else None,
         normalization_trace=norm_trace,
         trust=resolved["trust"],
-        reasons=build_reasons(resolved, strategy, was_conflict),
+        reasons=build_reasons(
+            resolved, strategy, was_conflict,
+            normalization=normalization, norm_trace=norm_trace,
+        ),
         confidence_breakdown=breakdown,
         competing_values=comp_entries,
     )
