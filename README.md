@@ -317,7 +317,7 @@ eightfold-candidate-transformer/
 
 Just add this one section to your README, right after the quick start section:
 
----
+
 
 ## 🎬 Demo Video
 
@@ -330,7 +330,7 @@ The demo walks through:
 - Provenance audit trail for every field
 - Raw JSON download
 
----
+
 
 
 ---
