@@ -1,3 +1,4 @@
+
 <div align="center">
 
 # 🧩 Multi-Source Candidate Data Transformer
@@ -13,7 +14,7 @@
 [![Status](https://img.shields.io/badge/Status-Deterministic%20%26%20Production--Oriented-1f8a4c)]()
 [![License](https://img.shields.io/badge/License-MIT-blue)]()
 
-📄 **[Read the full Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document.pdf)**
+📄 **[Read the full Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1)%20(1).pdf)**
 
 </div>
 
@@ -30,6 +31,19 @@ This is not a resume parser. It's an **entity resolution and data fusion engine*
 
 ---
 
+## 🎬 Demo Video
+
+📹 **[Watch the full pipeline demo (5 min)](https://drive.google.com/file/d/19lwGax5QpIoimur4BWjAgcig9NPmvCrr/view?usp=sharing)**
+
+The demo walks through:
+- Complete project structure and all pipeline stages
+- Live upload of real resume PDF, ATS JSON, recruiter CSV, notes, and GitHub profile
+- Golden record output with trust scores and conflict resolution
+- Provenance audit trail for every field
+- Raw JSON download
+
+---
+
 ## ✨ What It Does
 
 | Capability | Description |
@@ -43,6 +57,7 @@ This is not a resume parser. It's an **entity resolution and data fusion engine*
 | 🔍 **Full provenance** | Every field in the output is traceable to its source, parser, normalization method, and confidence score |
 | 🛠️ **Configurable projection** | Rename, subset, and reshape the output schema at runtime — no engine code changes required |
 | 🛡️ **Fail-safe validation** | Malformed input never crashes the pipeline — it degrades gracefully to `null` |
+| 🌐 **REST API + UI** | `api.py` exposes the pipeline as an API, with a lightweight `frontend/` UI to run it interactively |
 
 ---
 
@@ -69,7 +84,7 @@ Projection Layer  ──▶  Schema Validation
 Final Candidate JSON
 ```
 
-📐 The full architecture, trust-engine math, merge policy, and research basis are documented in detail in the **[Design Document](./docs/Candidate_Data_Transformer_Design_Document.pdf)**.
+📐 The full architecture, trust-engine math, merge policy, and research basis are documented in the **[Design Document](./docs/Candidate_Data_Transformer_Design_Document%20(1)%20(1).pdf)**.
 
 ---
 
@@ -105,7 +120,7 @@ The design is **inspired by** (not a reproduction of) established truth-discover
 
 ## 🧬 Canonical Candidate Schema
 
-```text
+```
 candidate_id
 full_name
 emails[]
@@ -134,7 +149,9 @@ Every field above ships with a parallel **provenance record**: `{ field, source,
 | **Entity Matching** | `RapidFuzz` |
 | **Validation** | `Pydantic` |
 | **External API** | `requests` + GitHub REST API |
-| **CLI** | `argparse` |
+| **Backend API** | `api.py` — REST endpoint exposing the pipeline |
+| **Frontend** | HTML / CSS / vanilla JS (`frontend/`) — lightweight UI over the API |
+| **CLI** | `argparse` (`main.py`) |
 | **Testing** | `pytest` |
 | **Tooling** | Git / GitHub |
 
@@ -144,27 +161,32 @@ Every field above ships with a parallel **provenance record**: `{ field, source,
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/<your-username>/candidate-data-transformer.git
-cd candidate-data-transformer
+git clone https://github.com/Santhosh-2226/eightfold-candidate-transformer.git
+cd eightfold-candidate-transformer
 
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Run the pipeline against sample sources
-python -m transformer.cli \
-  --csv samples/recruiter.csv \
-  --ats samples/ats.json \
-  --resume samples/resume.pdf \
-  --notes samples/notes.txt \
-  --github-username octocat \
-  --out candidate_profile.json
+# 3. Run the full pipeline directly (CLI entry point)
+python main_pipeline.py
 
-# 4. Run with a custom output projection
-python -m transformer.cli --config configs/projection.yaml --out custom_profile.json
+# — or run via main.py with sample data —
+python main.py
+
+# 4. Run the REST API server
+python api.py
+# → serves the pipeline as an API; open frontend/index.html
+#   (or the configured host/port) to use the UI
 
 # 5. Run the test suite
 pytest -v
+# or
+python test_pipeline.py
 ```
+
+Sample input sources live in `sample_data/` (`recruiters.csv`, `ats.json`, `resume.txt`, `notes.txt`), and example pipeline runs are pre-generated in `sample_data/output_default.json` and `sample_data/output_custom_config.json`.
+
+Output schema and projection behavior can be tuned in `config/settings.py` and `config/sample_config.json` without touching pipeline code.
 
 ### Example output (truncated)
 
@@ -194,23 +216,80 @@ pytest -v
 ## 🗂️ Project Structure
 
 ```
-candidate-data-transformer/
-├── transformer/
-│   ├── parsers/          # ResumeParser, CSVParser, ATSParser, GithubParser, NotesParser
-│   ├── mapping/          # Schema mapping per source
-│   ├── normalize/        # Phone, date, country, email normalizers
-│   ├── canonical/        # Canonical dictionaries (companies, skills)
-│   ├── matching/         # Entity resolution cascade
-│   ├── trust/            # Trust engine & conflict resolution
-│   ├── projection/       # Runtime-configurable output projection
-│   └── cli.py
-├── configs/               # Reliability weights, projection configs
-├── samples/                # Sample input sources
-├── docs/
-│   ├── Candidate_Data_Transformer_Design_Document.pdf
-│   └── architecture_diagram.png
+eightfold-candidate-transformer/
+├── api.py                    # REST API entry point — serves the pipeline
+├── main.py                   # CLI entry point
+├── main_pipeline.py          # Orchestrates the full pipeline end-to-end
+├── test_pipeline.py          # Pipeline-level tests
+├── requirements.txt
+│
+├── parsers/                  # Source-specific parsers
+│   ├── csv_parser.py
+│   ├── ats_parser.py
+│   ├── resume_parser.py
+│   ├── notes_parser.py
+│   ├── github_parser.py
+│   └── registry.py
+│
+├── mapper/
+│   └── schema_mapper.py
+│
+├── extractor/
+│   ├── extractor.py
+│   └── skills_vocab.py
+│
+├── canonicalizer/
+│   └── canonicalizer.py
+│
+├── normalizer/
+│   └── normalizer.py
+│
+├── matcher/
+│   └── matcher.py
+│
+├── resolver/
+│   └── resolver.py
+│
+├── trust/
+│   └── trust.py
+│
+├── provenance/
+│   └── provenance.py
+│
+├── projection/
+│   └── projector.py
+│
+├── validator/
+│   ├── validator.py
+│   └── schema_validator.py
+│
+├── schemas/
+│   └── canonical.py
+│
+├── config/
+│   ├── settings.py
+│   └── sample_config.json
+│
+├── sample_data/
+│   ├── recruiters.csv
+│   ├── ats.json
+│   ├── resume.txt
+│   ├── notes.txt
+│   ├── output_default.json
+│   ├── output_custom_config.json
+│   └── test_results.txt
+│
+├── frontend/
+│   ├── index.html
+│   ├── app.js
+│   └── style.css
+│
 ├── tests/
-└── requirements.txt
+│   └── test_pipeline.py
+│
+└── docs/
+    ├── Candidate_Data_Transformer_Design_Document (1) (1).pdf
+    └── architecture_diagram.png
 ```
 
 ---
@@ -226,12 +305,38 @@ candidate-data-transformer/
 
 ---
 
+## 🧪 Edge Cases & How They Are Handled
+
+| Edge Case | What Happens |
+|---|---|
+| **Missing source file** | Parser returns empty, run continues normally with remaining sources |
+| **Malformed CSV row** | Row is skipped with a warning, rest of the file processes normally |
+| **Blank name in ATS JSON** | Record is skipped — a nameless record cannot be matched to any candidate |
+| **Invalid phone number** | Normalization returns null — never kept as garbage, never guessed |
+| **Invalid email format** | Dropped at validation stage, never reaches trust scoring |
+| **Same phone in two formats** | E.164 normalization runs before matching — both formats merge correctly |
+| **Same company, different names** | Canonicalization resolves before conflict scoring — `Google Inc.` and `Google` are treated as agreement, not conflict |
+| **Two sources disagree on title** | Conflict penalty applied, higher-trust source wins, both values visible in provenance |
+| **Skill only in resume, not CSV** | Not penalized — CSV structurally cannot provide skills, coverage-aware agreement boost applies |
+| **Candidate in only one source** | Profile is still built with lower overall confidence — honest, not empty |
+| **Trust score below threshold** | Field is returned as `null` — never asserted as a weak guess |
+| **GitHub API unreachable** | Warning logged, run continues without GitHub data |
+| **Resume is a scanned image PDF** | No text layer extracted, resume contributes nothing, other sources fill the profile |
+| **Duplicate emails across sources** | Deduplicated after normalization — same address in two formats appears once |
+| **Conflicting years of experience** | Lower trust assigned — single heuristic source from resume, not corroborated |
+| **Empty recruiter notes file** | Parser returns empty cleanly, no crash, no contribution |
+| **Same candidate, different name spelling** | Matched via email or phone — name is not used as primary match key |
+| **Config requests a required field that is null** | Raises clear error when `on_missing` is set to `error`, returns null when set to `null`, omits field when set to `omit` |
+| **Entirely empty run — no sources provided** | CLI returns a clear error message before pipeline runs |
+
 ## ⚠️ Known Limitations
 
 - No LinkedIn scraping (ToS-compliant by design)
 - Resume extraction is rule-based, not LLM-based
 - Canonical dictionaries (companies, skill synonyms) require periodic maintenance
 - Source reliability weights are configured manually, not learned
+
+---
 
 ## 🔭 Roadmap
 
@@ -247,7 +352,8 @@ candidate-data-transformer/
 
 | Resource | Description |
 |---|---|
-| 📘 [Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document.pdf) | One-page abstract, full architecture, trust engine, merge policy, references |
+| 📘 [Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1)%20(1).pdf) | Full architecture, trust engine, merge policy, research references |
+| 🎬 [Demo Video](https://drive.google.com/file/d/19lwGax5QpIoimur4BWjAgcig9NPmvCrr/view?usp=sharing) | Full pipeline walkthrough — upload, merge, conflicts, provenance, JSON download |
 | 🖼️ [Architecture Diagram](./docs/architecture_diagram.png) | Visual pipeline reference |
 
 ---
