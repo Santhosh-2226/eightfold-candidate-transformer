@@ -305,6 +305,30 @@ eightfold-candidate-transformer/
 
 ---
 
+## 🧪 Edge Cases & How They Are Handled
+
+| Edge Case | What Happens |
+|---|---|
+| **Missing source file** | Parser returns empty, run continues normally with remaining sources |
+| **Malformed CSV row** | Row is skipped with a warning, rest of the file processes normally |
+| **Blank name in ATS JSON** | Record is skipped — a nameless record cannot be matched to any candidate |
+| **Invalid phone number** | Normalization returns null — never kept as garbage, never guessed |
+| **Invalid email format** | Dropped at validation stage, never reaches trust scoring |
+| **Same phone in two formats** | E.164 normalization runs before matching — both formats merge correctly |
+| **Same company, different names** | Canonicalization resolves before conflict scoring — `Google Inc.` and `Google` are treated as agreement, not conflict |
+| **Two sources disagree on title** | Conflict penalty applied, higher-trust source wins, both values visible in provenance |
+| **Skill only in resume, not CSV** | Not penalized — CSV structurally cannot provide skills, coverage-aware agreement boost applies |
+| **Candidate in only one source** | Profile is still built with lower overall confidence — honest, not empty |
+| **Trust score below threshold** | Field is returned as `null` — never asserted as a weak guess |
+| **GitHub API unreachable** | Warning logged, run continues without GitHub data |
+| **Resume is a scanned image PDF** | No text layer extracted, resume contributes nothing, other sources fill the profile |
+| **Duplicate emails across sources** | Deduplicated after normalization — same address in two formats appears once |
+| **Conflicting years of experience** | Lower trust assigned — single heuristic source from resume, not corroborated |
+| **Empty recruiter notes file** | Parser returns empty cleanly, no crash, no contribution |
+| **Same candidate, different name spelling** | Matched via email or phone — name is not used as primary match key |
+| **Config requests a required field that is null** | Raises clear error when `on_missing` is set to `error`, returns null when set to `null`, omits field when set to `omit` |
+| **Entirely empty run — no sources provided** | CLI returns a clear error message before pipeline runs |
+
 ## ⚠️ Known Limitations
 
 - No LinkedIn scraping (ToS-compliant by design)
