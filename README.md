@@ -315,6 +315,24 @@ eightfold-candidate-transformer/
 | 📘 [Design Document (PDF)](./docs/Candidate_Data_Transformer_Design_Document%20(1).pdf) | One-page abstract, full architecture, trust engine, merge policy, references |
 | 🖼️ [Architecture Diagram](./docs/architecture_diagram.png) | Visual pipeline reference |
 
+Just add this one section to your README, right after the quick start section:
+
+---
+
+## 🎬 Demo Video
+
+📹 **[Watch the full pipeline demo (5 min)](https://drive.google.com/file/d/19lwGax5QpIoimur4BWjAgcig9NPmvCrr/view?usp=sharing)**
+
+The demo walks through:
+- Complete project structure and all pipeline stages
+- Live upload of real resume PDF, ATS JSON, recruiter CSV, notes, and GitHub profile
+- Golden record output with trust scores and conflict resolution
+- Provenance audit trail for every field
+- Raw JSON download
+
+---
+
+
 ---
 
 <div align="center">
